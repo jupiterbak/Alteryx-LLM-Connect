@@ -1,0 +1,50 @@
+{
+    "name": "MaxLLM",
+    "tool_category": "Max LLM",
+    "package_icon_path": "configuration\\default_package_icon.png",
+    "author": "Jupiter Bakakeu",
+    "company": "Alteryx Inc.",
+    "copyright": "2024",
+    "description": "A single cross-platform tool for all LLM providers",
+    "ayx_cli_version": "1.2.1",
+    "backend_language": "python",
+    "backend_language_settings": {
+        "python_version": "3.10",
+        "requirements_local_path": "backends\\requirements-local.txt",
+        "requirements_thirdparty_path": "backends\\requirements-thirdparty.txt"
+    },
+    "tools": {
+        "LLMConnect": {
+            "backend": {
+                "tool_module": "ayx_plugins",
+                "tool_class_name": "LLMConnect"
+            },
+            "ui": {},
+            "configuration": {
+                "long_name": "LLMConnect",
+                "description": "A single tool to connect to LLM",
+                "version": "1.0",
+                "search_tags": [],
+                "help_url": "https://help.alteryx.com/developer-help",
+                "icon_path": "configuration\\LLMConnect_1_0\\icon.png",
+                "input_anchors": {
+                    "Input": {
+                        "label": "",
+                        "allow_multiple": false,
+                        "optional": false
+                    }
+                },
+                "output_anchors": {
+                    "Output": {
+                        "label": "",
+                        "allow_multiple": false,
+                        "optional": false
+                    }
+                },
+                "dcm_namespace": "Alteryx",
+                "writes_output_data": true
+            }
+        }
+    },
+    "tool_version": "1.0"
+}
