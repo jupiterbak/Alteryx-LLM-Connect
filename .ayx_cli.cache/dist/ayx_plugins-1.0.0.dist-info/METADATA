@@ -1,0 +1,9 @@
+Metadata-Version: 2.1
+Name: ayx_plugins
+Version: 1.0.0
+Summary: ['Alteryx Designer Plugin implementations.']
+Author: Alteryx, Inc.
+Author-email: support@alteryx.com
+Platform: Windows
+Description-Content-Type: text/markdown
+

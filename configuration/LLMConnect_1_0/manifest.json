@@ -1,0 +1,7 @@
+{
+    "version": "3.10",
+    "entry_point": "LLMConnect_1_0\\main.pyz",
+    "tool_package": "ayx_plugins",
+    "tool_name": "LLMConnect",
+    "additional_pythonpaths": []
+}

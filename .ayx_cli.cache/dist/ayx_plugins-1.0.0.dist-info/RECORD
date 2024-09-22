@@ -1,0 +1,11 @@
+ayx_plugins-1.0.0.dist-info/INSTALLER,sha256=zuuue4knoyJ-UwPPXg8fezS7VCrXJQrAP7zeNuwvFQg,4
+ayx_plugins-1.0.0.dist-info/METADATA,sha256=VbeU_fziQIs9-4bdSNkd0IJ-hYVDdJhMuI6sV-qAyyE,233
+ayx_plugins-1.0.0.dist-info/RECORD,,
+ayx_plugins-1.0.0.dist-info/REQUESTED,sha256=47DEQpj8HBSa-_TImW-5JCeuQeRkm5NMpJWZG3hSuFU,0
+ayx_plugins-1.0.0.dist-info/WHEEL,sha256=GJ7t_kWBFywbagK5eo9IoUwLW6oyOeTKmQ-9iHFVNxQ,92
+ayx_plugins-1.0.0.dist-info/direct_url.json,sha256=8Lqq0xryOoNKtuJ9qheoXX61C02GkSmejrkfWs5nR_k,78
+ayx_plugins-1.0.0.dist-info/top_level.txt,sha256=W5LlMln6bDR28RBXDPP0UEmxW5GMp-JjAgdhv6cJ0kA,12
+ayx_plugins/__init__.py,sha256=K9BQ-MgHXo634Wpk5p8TVdv5HaJdJ4iNNljglFoTf70,700
+ayx_plugins/__pycache__/__init__.cpython-310.pyc,,
+ayx_plugins/__pycache__/l_l_m_connect.cpython-310.pyc,,
+ayx_plugins/l_l_m_connect.py,sha256=Tl9cEfj64uwxmOQJ7KpkRosn5KoFN8K1y3rTtlzgCq4,3027
