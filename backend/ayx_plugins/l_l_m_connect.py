@@ -13,16 +13,18 @@
 # limitations under the License.
 
 """Example pass through tool."""
-from typing import TYPE_CHECKING
 
 from ayx_python_sdk.core import (
     Anchor,
     PluginV2,
 )
 from ayx_python_sdk.providers.amp_provider.amp_provider_v2 import AMPProviderV2
+import litellm
+import json
+#from litellm import completion, get_model_cost
+# from litellm.utils import trim_messages
 
-if TYPE_CHECKING:
-    import pyarrow as pa
+DEFAULT_NUM_RETRIES = 3
 
 
 class LLMConnect(PluginV2):
@@ -33,6 +35,36 @@ class LLMConnect(PluginV2):
         self.name = "LLMConnect"
         self.provider = provider
         self.provider.io.info(f"{self.name} tool started")
+        # Read all configuration values
+        self.platform = self.provider.tool_config.get("platform")
+        self.endpoint = self.provider.tool_config.get("endpoint")
+        self.use_api_key = self.provider.tool_config.get("useApiKey") == "1"
+        # self.api_keys = self.provider.tool_config("apiKeys")
+        self.model = self.provider.tool_config.get("model")
+        self.temperature = float(self.provider.tool_config.get("temperature"))
+        self.top_p = float(self.provider.tool_config.get("topP"))
+        self.max_token = int(self.provider.tool_config.get("maxToken"))
+        self.stop = self.provider.tool_config.get("stop")
+        self.seed = int(self.provider.tool_config.get("seed")) if self.provider.tool_config.get("seed") else None
+        self.check_safety = self.provider.tool_config.get("checkSafety") == "1"
+        self.use_caching = self.provider.tool_config.get("useCaching") == "1"
+        self.prompt_field = self.provider.tool_config.get("promptField")
+        self.system_prompt = self.provider.tool_config.get("systemPrompt")
+        self.use_system_prompt = self.provider.tool_config.get("useSystemPrompt") == "1"
+        self.simulate_response = self.provider.tool_config.get("simulateResponse") == "1"
+        self.simulate_response_text = self.provider.tool_config.get("simulateResponseText")
+        self.num_retries = DEFAULT_NUM_RETRIES
+        self.batch_processing = self.provider.tool_config.get("batchProcessing") == "1"
+        self.max_budget = float(self.provider.tool_config.get("maxBudget")) if self.provider.tool_config.get("maxBudget") else 1.001
+
+        # Log all the configuration values by converting tool_config to a string
+        self.provider.io.info(f"Tool Config: {json.dumps(self.provider.tool_config, indent=2)}")
+        
+        self.total_cost = 0
+        litellm.drop_params = True
+        litellm.set_verbose=False
+        litellm.max_budget = self.max_budget
+            
 
     def on_record_batch(self, batch: "pa.Table", anchor: Anchor) -> None:
         """
@@ -49,7 +81,164 @@ class LLMConnect(PluginV2):
         anchor
             A namedtuple('Anchor', ['name', 'connection']) containing input connection identifiers.
         """
-        self.provider.write_to_anchor("Output", batch)
+        from pandas.core.dtypes.common import is_string_dtype
+        from openai import OpenAIError
+        import pandas as pd
+        import pyarrow as pa
+        from pyarrow import RecordBatch, Table
+        import litellm
+        from litellm import completion, completion_cost, batch_completion
+        from litellm.utils import trim_messages
+        # self.provider.write_to_anchor("Output", batch)  
+
+        def my_custom_logging_fn(model_call_dict):
+            self.provider.io.info(f"model call details: {json.dumps(model_call_dict, indent=2)}")      
+
+        metadata = batch.schema
+        if not any([field_name == self.prompt_field for field_name in metadata.names]):
+            raise RuntimeError(
+                f"Incoming data must contain a column with the prompt field: '{self.prompt_field}'"
+            )
+        input_dataframe = batch.to_pandas()
+
+        if not is_string_dtype(input_dataframe[self.prompt_field]):
+            raise RuntimeError(f"'{self.prompt_field}' column must be of 'string' data type")   
+
+        outputs = []
+        prompt_tokens_list = []
+        completion_tokens_list = []
+        costs = []
+
+        if self.batch_processing:
+            # Batch processing
+            batch_messages = []
+            for _, row in input_dataframe.iterrows():
+                if self.use_system_prompt:
+                    messages = [
+                        {"role": "system", "content": self.system_prompt},
+                        {"role": "user", "content": row[self.prompt_field]}
+                    ]
+                else:
+                    messages = [
+                        {"role": "user", "content": row[self.prompt_field]}
+                    ]
+                batch_messages.append(messages)
+
+            try:
+                completion_kwargs = {
+                    "model": self.model,
+                    "messages": batch_messages,
+                    "temperature": self.temperature,
+                    "top_p": self.top_p,
+                    "max_tokens": self.max_token,
+                    "stop": self.stop,
+                    "seed": self.seed,
+                    "num_retries": self.num_retries,
+                    
+                }
+
+                if self.simulate_response:
+                    completion_kwargs["mock_response"] = self.simulate_response_text
+
+                if self.platform == "Others (Custom)":
+                    completion_kwargs["base_url"] = self.endpoint
+                    if self.use_api_key:
+                        completion_kwargs["api_key"] = self.api_keys
+
+                responses = batch_completion(**completion_kwargs)
+
+                for response in responses:
+                    output_content = response['choices'][0]['message']['content']
+                    prompt_tokens = response['usage']['prompt_tokens']
+                    completion_tokens = response['usage']['completion_tokens']
+                    
+                    if not self.simulate_response:
+                        cost = completion_cost(completion_response=response)
+                        self.total_cost += cost
+                    else:
+                        cost = 0  # Set cost to 0 for simulated responses
+
+                    outputs.append(output_content)
+                    prompt_tokens_list.append(prompt_tokens)
+                    completion_tokens_list.append(completion_tokens)
+                    costs.append(cost)
+
+            except Exception as e:
+                self.provider.io.error(f"Error in litellm batch completion: {str(e)}")
+                outputs = [None] * len(input_dataframe)
+                prompt_tokens_list = [None] * len(input_dataframe)
+                completion_tokens_list = [None] * len(input_dataframe)
+                costs = [None] * len(input_dataframe)
+
+        else:
+            # Single processing (existing code)
+            for _, row in input_dataframe.iterrows():
+                if self.use_system_prompt:
+                    messages = [
+                        {"role": "system", "content": self.system_prompt},
+                        {"role": "user", "content": row[self.prompt_field]}
+                    ]
+                else:
+                    messages = [
+                        {"role": "user", "content": row[self.prompt_field]}
+                    ]
+                messages = trim_messages(messages, self.model)
+
+                try:
+                    completion_kwargs = {
+                        "model": self.model,
+                        "messages": messages,
+                        "temperature": self.temperature,
+                        "top_p": self.top_p,
+                        "max_tokens": self.max_token,
+                        "stop": self.stop,
+                        "seed": self.seed,
+                        "num_retries": self.num_retries,
+                        # "check_safety": self.check_safety,
+                        # "use_caching": self.use_caching,
+                        # "logging_fn": my_custom_logging_fn,
+                    }
+
+                    if self.simulate_response:
+                        completion_kwargs["mock_response"] = self.simulate_response_text
+
+                    if self.platform == "Others (Custom)":
+                        completion_kwargs["base_url"] = self.endpoint
+                        if self.use_api_key:
+                            completion_kwargs["api_key"] = self.api_keys
+
+                    response = completion(**completion_kwargs)
+
+                    output_content = response['choices'][0]['message']['content']
+                    prompt_tokens = response['usage']['prompt_tokens']
+                    completion_tokens = response['usage']['completion_tokens']
+                    
+                    if not self.simulate_response:
+                        cost = completion_cost(completion_response=response)
+                        self.total_cost += cost
+                    else:
+                        cost = 0  # Set cost to 0 for simulated responses
+
+                    outputs.append(output_content)
+                    prompt_tokens_list.append(prompt_tokens)
+                    completion_tokens_list.append(completion_tokens)
+                    costs.append(cost)
+
+                except Exception as e:
+                    self.provider.io.error(f"Error in litellm completion: {str(e)}")
+                    outputs.append(None)
+                    prompt_tokens_list.append(None)
+                    completion_tokens_list.append(None)
+                    costs.append(None)
+
+        # Add results to the dataframe
+        input_dataframe['output'] = outputs
+        input_dataframe['prompt_tokens'] = prompt_tokens_list
+        input_dataframe['completion_tokens'] = completion_tokens_list
+        input_dataframe['cost($)'] = costs
+
+        # Write the updated dataframe to the output anchor
+        self.provider.write_to_anchor("Output", pa.Table.from_pandas(input_dataframe))
 
     def on_incoming_connection_complete(self, anchor: Anchor) -> None:
         """
@@ -79,4 +268,7 @@ class LLMConnect(PluginV2):
         Note: A tool with an optional input anchor and no incoming connections should
         also write any records to output anchors here.
         """
+
+        # Initialize the output dataframe
         self.provider.io.info(f"{self.name} tool done.")
+        self.provider.io.info(f"Total cost: ${self.total_cost:.4f}")
