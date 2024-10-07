@@ -6,12 +6,14 @@ ConnectLLM is a powerful and flexible custom Tool for Alteryx that enables seaml
 
 - Support for 1000+ LLMs models across 20+ platforms
 - Integration with major AI providers including OpenAI, Microsoft Azure, Google (Gemini and Vertex AI), Mistral AI, AWS Bedrock, IBM, and more
-- Batch processing for efficient completions
+- Batch processing for efficient and fast completions
 - Customizable inference parameters
 - Simulation mode for testing and development
 - Easy integration with Alteryx workflows
 - Parameter saving for consistent reuse
 - Caching mechanism to avoid redundant and costly API calls
+- Enforce JSON output format
+- Budget manager to control costs
 - Multi-language support (English, Spanish, French, German, Polish, Portuguese, Chinese, Japanese, Russian)
 
 ## Installation
@@ -28,12 +30,29 @@ To install ConnectLLM for Alteryx:
 1. Drag the ConnectLLM tool from the tool palette onto your Alteryx workflow
 2. Connect your input data stream to the tool
 3. Configure the tool settings:
-   - Select the LLM provider and model from the extensive list of 1000+ supported options across 20+ platforms
-   - Set inference parameters (temperature, max tokens, etc.)
-   - Choose between live API calls or simulation mode
-   - Configure caching options to optimize API usage
+   - Select the LLM provider and model from the extensive list of 1000+ supported options across 20+ platforms:
+   
+     ![Select platform and supported models](docs/images/Select-platform-and-supported-models.png)
+   
+   - Set inference parameters (temperature, max tokens, etc.):
+   
+     ![Inference Settings](docs/images/Inference-Settings.png)
+   
+   - Set the maximum budget for API calls
    - Select Batch inference to process multiple records in a single API call
-4. Run your workflow to generate batch completions
+   - Configure caching options to optimize API usage
+   - Check "Enforce JSON output" to ensure the output is in JSON format
+   - Add safety settings to prevent harmful outputs
+4. Choose between live API calls or simulation mode:
+   
+   ![Simulate responses](docs/images/Simulate-responses.png)
+   
+
+5. Define your prompt and system prompt:
+
+   ![Define prompt and system prompt](docs/images/Define-prompt-and_system-prompt.png)
+
+6. Run your workflow to generate batch completions
 
 ## Configuration
 
