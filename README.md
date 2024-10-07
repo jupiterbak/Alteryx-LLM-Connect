@@ -82,4 +82,4 @@ ConnectLLM for Alteryx is released under the MIT License. See the [LICENSE](LICE
 
 ## Support
 
-If you encounter any issues or have questions, please file an issue on our [GitHub repository](https://github.com/yourusername/ConnectLLM-Alteryx/issues) or contact Alteryx support.
+If you encounter any issues or have questions, please file an issue on our [GitHub repository](https://github.com/jupiterbak/ConnectLLM-Alteryx/issues) or contact Alteryx support.
