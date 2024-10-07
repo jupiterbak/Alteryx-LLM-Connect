@@ -1,7 +1,7 @@
 import React, { useContext, useEffect, useState } from 'react';
 import ReactDOM from 'react-dom';
 import { AyxAppWrapper, Box, Tabs, Tab, Typography, makeStyles, Theme, Grid, NativeSelect, TextField, Checkbox, FormControlLabel, FormGroup, Button, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper, IconButton } from '@alteryx/ui';
-import { Alteryx, Delete as DeleteIcon, Plus as AddIcon, Server as BatchIcon } from '@alteryx/icons';
+import { Alteryx, Delete as DeleteIcon, Plus as AddIcon, Server as BatchIcon, Save as SaveIcon, Download as ImportIcon } from '@alteryx/icons';
 import { Context as UiSdkContext, DesignerApi, JsEvent } from '@alteryx/react-comms';
 import { IntlProvider, FormattedMessage } from 'react-intl';
 import { config, Platform } from './config';
@@ -95,6 +95,12 @@ const useStyles = makeStyles((theme: Theme) => ({
   boldPrimaryLabel: {
     fontWeight: 'bold',
     color: theme.palette.primary.main,
+  },
+  configButton: {
+    minWidth: 'auto',
+    padding: theme.spacing(0, 1),
+    fontSize: '0.75rem',
+    textTransform: 'none',
   },
 }));
 
@@ -404,12 +410,72 @@ const App = () => {
     });
   };
 
+  const saveConfiguration = () => {
+    const config = JSON.stringify(model.Configuration, null, 2);
+    const blob = new Blob([config], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'llm_connect_config.json';
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const importConfiguration = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        try {
+          const config = JSON.parse(e.target?.result as string);
+          handleUpdateModel({
+            ...model,
+            Configuration: config
+          });
+        } catch (error) {
+          console.error('Error parsing JSON:', error);
+          // You might want to show an error message to the user here
+        }
+      };
+      reader.readAsText(file);
+    }
+  };
+
   return (
-    <Grid container className={classes.root} direction="column" spacing={2} >
+    <Grid container className={classes.root} direction="column" spacing={2}>
       <Grid item xs={12}>
-        <Typography variant="h4" className={classes.title}>
-          <FormattedMessage id="title" defaultMessage="LLM Connect" />
-        </Typography>
+        <Box display="flex" justifyContent="space-between" alignItems="center">
+          <Typography variant="h4" className={classes.title}>
+            <FormattedMessage id="title" defaultMessage="LLM Connect" />
+          </Typography>
+          <Box>
+            <Button
+              startIcon={<SaveIcon />}
+              onClick={saveConfiguration}
+              color="primary"
+              size="small"
+              className={classes.configButton}
+              style={{ marginRight: '4px' }}
+            >
+              {/* <FormattedMessage id="saveConfig" defaultMessage="Save" /> */}
+            </Button>
+            <Button
+              startIcon={<ImportIcon />}
+              component="label"
+              color="primary"
+              size="small"
+              className={classes.configButton}
+            >
+              {/* <FormattedMessage id="importConfig" defaultMessage="Import" /> */}
+              <input
+                type="file"
+                hidden
+                accept=".json"
+                onChange={importConfiguration}
+              />
+            </Button>
+          </Box>
+        </Box>
       </Grid>
       <Grid item xs={12}>
         <Typography variant="body1" className={classes.instructions}>
@@ -899,6 +965,8 @@ const Tool = () => {
       "inferenceSettings.selectedConfig": "Selected Configuration: {platform} - {model}",
       "inferenceSettings.enforceJsonResponse": "Enforce JSON Response",
       "inferenceSettings.jsonModeNote": "Important: When using JSON mode, you must also instruct the model to produce JSON yourself via a system or user message. Without this, the model may generate an unending stream of whitespace until the generation reaches the token limit, resulting in a long-running and seemingly 'stuck' request. Also note that the message content may be partially cut off if finish_reason='length', which indicates the generation exceeded max_tokens or the conversation exceeded the max context length.",
+      "saveConfig": "Save",
+      "importConfig": "Import",
     },
     es: {
       "title": "Conexión LLM",
@@ -943,6 +1011,8 @@ const Tool = () => {
       "inferenceSettings.selectedConfig": "Configuración seleccionada: {platform} - {model}",
       "inferenceSettings.enforceJsonResponse": "Enforce JSON Response",
       "inferenceSettings.jsonModeNote": "Importante: Al usar JSON mode, también debe instruir al modelo a producir JSON por sí mismo mediante un mensaje del sistema o del usuario. Sin esto, el modelo puede generar una secuencia continua de espacios en blanco hasta que la generación alcance el límite de tokens, resultando en una solicitud que parece 'atascada'. También tenga en cuenta que el contenido del mensaje puede ser parcialmente cortado si finish_reason='length', que indica que la generación excedió max_tokens o que la conversación excedió la longitud máxima del contexto.",  
+      "saveConfig": "Guardar",
+      "importConfig": "Importar",
     },
     fr: {
       "title": "Connexion LLM",
@@ -985,8 +1055,10 @@ const Tool = () => {
       "simulate.simulatedResponseText": "Texte de Réponse Simulée",
       "inferenceSettings.maxBudget": "Budget Maximum ($)",
       "inferenceSettings.selectedConfig": "Configuration sélectionnée: {platform} - {model}",
-      "inferenceSettings.enforceJsonResponse": "Enforce JSON Response",
-      "inferenceSettings.jsonModeNote": "Important: Al usar JSON mode, también debe instruir al modelo a producir JSON por sí mismo mediante un mensaje del sistema o del usuario. Sin esto, el modelo puede generar una secuencia continua de espacios en blanco hasta que la generación alcance el límite de tokens, resultando en una solicitud que parece 'atascada'. También tenga en cuenta que el contenido del mensaje puede ser parcialmente cortado si finish_reason='length', que indica que la generación excedió max_tokens o que la conversación excedió la longitud máxima del contexto.",  
+      "inferenceSettings.enforceJsonResponse": "Forcer la réponse JSON",
+      "inferenceSettings.jsonModeNote": "Important: Lors de l'utilisation du mode JSON, vous devez également instruire le modèle à produire une réponse JSON par lui-même à l'aide d'un message système ou utilisateur. Sans cela, le modèle peut générer une séquence infinie de blancs jusqu'à ce que la génération atteigne la limite de tokens, entraînant une requête qui semble 'bloquée'. Notez également que le contenu du message peut être partiellement tronqué si finish_reason='length', ce qui signifie que la génération a dépassé le nombre de tokens ou que la conversation a dépassé la longueur maximale du contexte.",
+      "saveConfig": "Sauvegarder",
+      "importConfig": "Importer",
     },
     de: {
       "title": "LLM-Verbindung",
@@ -1031,6 +1103,8 @@ const Tool = () => {
       "inferenceSettings.selectedConfig": "Ausgewählte Konfiguration: {platform} - {model}",
       "inferenceSettings.enforceJsonResponse": "JSON-Antwort erzwingen",
       "inferenceSettings.jsonModeNote": "Wichtig: Beim Verwenden von JSON-Modus muss der Modell auch selbst anweisen, JSON zu produzieren, indem Sie ein System- oder Benutzermeldung senden. Ohne dies wird das Modell eine unendliche Sequenz von Leerzeichen produzieren, bis die Generierung das Tokenlimit erreicht oder die Konversation die maximale Kontextlänge überschreitet, was eine scheinbar 'eingefrorene' Anfrage zur Folge hat. Beachten Sie auch, dass der Nachrichteninhalt möglicherweise teilweise abgeschnitten wird, wenn finish_reason='length', was bedeutet, dass die Generierung das Tokenlimit überschritten hat oder die Konversation die maximale Kontextlänge überschritten hat.",  
+      "saveConfig": "Speichern",
+      "importConfig": "Importieren",
     },
     pt: {
       "title": "ConecteLLM",
@@ -1073,8 +1147,10 @@ const Tool = () => {
       "simulate.simulatedResponseText": "Texto de Resposta Simulado",
       "inferenceSettings.maxBudget": "Budget Máximo ($)",
       "inferenceSettings.selectedConfig": "Configuração selecionada: {platform} - {model}",
-      "inferenceSettings.enforceJsonResponse": "Enforce JSON Response", 
-      "inferenceSettings.jsonModeNote": "Importante: Al usar JSON mode, también debe instruir al modelo a producir JSON por sí mismo mediante un mensaje del sistema o del usuario. Sin esto, el modelo puede generar una secuencia continua de espacios en blanco hasta que la generación alcance el límite de tokens, resultando en una solicitud que parece 'atascada'. También tenga en cuenta que el contenido del mensaje puede ser parcialmente cortado si finish_reason='length', que indica que la generación excedió max_tokens o que la conversación excedió la longitud máxima del contexto.",  
+      "inferenceSettings.enforceJsonResponse": "Forçar Resposta JSON",
+      "inferenceSettings.jsonModeNote": "Importante: Ao usar o modo JSON, você também deve instruir o modelo a produzir uma resposta JSON por si só usando uma mensagem do sistema ou do usuário. Sem isso, o modelo pode gerar uma sequência infinita de espaços em branco até que a geração atinja o limite de tokens, resultando em uma solicitação que parece 'bloquada'. Note também que o conteúdo da mensagem pode ser parcialmente truncado se finish_reason='length', o que significa que a geração excedeu max_tokens ou que a conversação excedeu o comprimento máximo do contexto.",  
+      "saveConfig": "Salvar",
+      "importConfig": "Importar",
     },
     pl: {
       "title": "LLM Connect",
@@ -1114,8 +1190,10 @@ const Tool = () => {
       "apiKeyInstructions.docLink": "tym linkiem",
       "inferenceSettings.maxBudget": "Budget Maksymalny ($)",
       "inferenceSettings.selectedConfig": "Wybrana konfiguracja: {platform} - {model}",
-      "inferenceSettings.enforceJsonResponse": "Enforce JSON Response",
-      "inferenceSettings.jsonModeNote": "Ważne: Przy użyciu trybu JSON, model musi również samodzielnie zlecić wyprodukowanie JSON za pomocą wiadomości systemowej lub użytkownika. Bez tego model może wygenerować nieskończoną sekwencję spacji, dopóki generacja nie osiągnie limitu tokenów lub konwersacja nie przekroczy maksymalnej długości kontekstu, co może spowodować pozornie 'zamarzniętą' wnioskowanie. Należy również zauważyć, że treść wiadomości może być częściowo obcięta, jeśli finish_reason='length', co oznacza, że generacja przekroczyła limit tokenów lub konwersacja przekroczyła maksymalną długość kontekstu.",  
+      "inferenceSettings.enforceJsonResponse": "Forçar Resposta JSON",
+      "inferenceSettings.jsonModeNote": "Importante: Ao usar o modo JSON, você também deve instruir o modelo a produzir uma resposta JSON por si só usando uma mensagem do sistema ou do usuário. Sem isso, o modelo pode gerar uma sequência infinita de espaços em branco até que a geração atinja o limite de tokens, resultando em uma solicitação que parece 'bloquada'. Note também que o conteúdo da mensagem pode ser parcialmente truncado se finish_reason='length', o que significa que a geração excedeu max_tokens ou que a conversação excedeu o comprimento máximo do contexto.",  
+      "saveConfig": "Salvar",
+      "importConfig": "Importar",
     },
     cn: {
       "title": "LLM 连接",
@@ -1160,6 +1238,8 @@ const Tool = () => {
       "inferenceSettings.selectedConfig": "选定配置: {platform} - {model}",
       "inferenceSettings.enforceJsonResponse": "Enforce JSON Response",
       "inferenceSettings.jsonModeNote": "重要：使用 JSON 模式时，模型还必须通过系统或用户消息指示自己生成 JSON。否则，模型可能会生成一个无限序列的空白，直到生成达到令牌限制或对话超过最大上下文长度，导致请求看起来‘卡住’。还要注意，如果 finish_reason='length'，则消息内容可能会被部分截断，这表示生成超过了 max_tokens 或对话超过了最大上下文长度。",  
+      "saveConfig": "保存",
+      "importConfig": "导入",
     },
     ja: {
       "title": "LLM 接続",
@@ -1204,6 +1284,8 @@ const Tool = () => {
       "inferenceSettings.selectedConfig": "選択された構成: {platform} - {model}",
       "inferenceSettings.enforceJsonResponse": "Enforce JSON Response",
       "inferenceSettings.jsonModeNote": "重要：使用 JSON 模式时，模型还必须通过系统或用户消息指示自己生成 JSON。否则，模型可能会生成一个无限序列的空白，直到生成达到令牌限制或对话超过最大上下文长度，导致请求看起来‘卡住’。还要注意，如果 finish_reason='length'，则消息内容可能会被部分截断，这表示生成超过了 max_tokens 或对话超过了最大上下文长度。",  
+      "saveConfig": "保存",
+      "importConfig": "导入",
     },
     ru: {
       "title": "LLM Connect",
@@ -1248,6 +1330,8 @@ const Tool = () => {
       "inferenceSettings.selectedConfig": "Выбранная конфигурация: {platform} - {model}",
       "inferenceSettings.enforceJsonResponse": "Enforce JSON Response",
       "inferenceSettings.jsonModeNote": "Важно: При использовании режима JSON модель также должна самостоятельно указать, чтобы она генерировала JSON с помощью системного или пользовательского сообщения. В противном случае модель может генерировать бесконечную последовательность пробелов, пока генерация не достигнет ограничения токенов или диалог не превысит максимальную длину контекста, что может привести к кажущейся 'замороженной' запросу. Также обратите внимание, что содержимое сообщения может быть частично обрезано, если finish_reason='length', что означает, что генерация превысила ограничение токенов или диалог превысил максимальную длину контекста.",  
+      "saveConfig": "Сохранить",
+      "importConfig": "Импортировать",
     },          
   };
 
