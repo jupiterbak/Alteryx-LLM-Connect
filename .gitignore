@@ -2,9 +2,9 @@
 *.doit*
 .ayx_cli.cache/dist/**
 .ayx_cli.cache/**
-build/**
-build/
-**/build
+#build/**
+#build/
+#**/build
 __pycache__/**
 *.py[cod]
 *.so
@@ -62,8 +62,7 @@ coverage/
 *.tar.gz
 *.zip
 *.pyc
-*.yxi
-*.yxi
+# *.yxi
 **/main.pyz
 
 # Temporary files
@@ -78,7 +77,7 @@ __pycache__/
 *$py.class
 *.so
 .Python
-build/
+# build/
 develop-eggs/
 downloads/
 eggs/
@@ -96,3 +95,10 @@ share/python-wheels/
 MANIFEST
 pip-log.txt
 pip-delete-this-directory.txt
+
+# Alteryx specific
+*.yxmd
+*.yxmc
+*.yxdb
+*.yxft
+*.bak

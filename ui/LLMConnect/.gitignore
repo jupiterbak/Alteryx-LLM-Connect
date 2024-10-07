@@ -23,7 +23,6 @@ report.*
 *.d.ts
 
 # Build output
-# build/
 out/
 
 # Logs
