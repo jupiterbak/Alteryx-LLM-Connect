@@ -26,6 +26,7 @@ const DEFAULT_SIMULATE_RESPONSE = "0"
 const DEFAULT_SIMULATE_RESPONSE_TEXT = "The response has been simulated."
 const DEFAULT_BATCH_PROCESSING = "0"
 const DEFAULT_MAX_BUDGET = 1.00
+const DEFAULT_ENFORCE_JSON_RESPONSE = "0"
 
 
 // Extract supported platforms, models, and API URLs
@@ -202,6 +203,17 @@ const App = () => {
       Configuration: {
         ...model.Configuration,
         [field]: event.target.checked ? "1" : "0"
+      }
+    });
+  };
+
+  const handleEnforceJsonResponseChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const enforceJsonResponse = event.target.checked ? "1" : "0";
+    handleUpdateModel({
+      ...model,
+      Configuration: {
+        ...model.Configuration,
+        enforceJsonResponse,
       }
     });
   };
@@ -642,6 +654,18 @@ const App = () => {
         )}
         {activeTab === 2 && (
           <Grid container spacing={2}>
+            <Grid item xs={12}>
+              <Typography variant="body1">
+                <FormattedMessage 
+                  id="inferenceSettings.selectedConfig" 
+                  defaultMessage="Selected Configuration: {platform} - {model}"
+                  values={{
+                    platform: model.Configuration.platform || 'Not selected',
+                    model: model.Configuration.model || 'Not selected'
+                  }}
+                />
+              </Typography>
+            </Grid>
             <Grid item xs={12} sm={6}>
               <TextField
                 label={
@@ -655,24 +679,6 @@ const App = () => {
                 fullWidth
                 className={`${classes.textField} ${classes.textFieldLabel}`}
                 inputProps={{ step: 0.01, min: 0 }}
-              />
-            </Grid>
-            <Grid item xs={12}>
-              <FormControlLabel
-                control={
-                  <Checkbox
-                    checked={model.Configuration.batchProcessing === "1"}
-                    onChange={handleBatchProcessingChange}
-                    color="primary"
-                    disabled={true}
-                  />
-                }
-                label={
-                  <Typography >
-                    {/* <BatchIcon className={classes.batchIcon} /> */}
-                    <FormattedMessage id="inferenceSettings.batchProcessing" defaultMessage="Batch Processing" />
-                  </Typography>
-                }
               />
             </Grid>
             <Grid item xs={12} sm={6}>
@@ -733,6 +739,22 @@ const App = () => {
                 <FormControlLabel
                   control={
                     <Checkbox
+                      checked={model.Configuration.batchProcessing === "1"}
+                      onChange={handleBatchProcessingChange}
+                      color="primary"
+                      //disabled={true}
+                    />
+                  }
+                  label={
+                    <Typography >
+                      {/* <BatchIcon className={classes.batchIcon} /> */}
+                      <FormattedMessage id="inferenceSettings.batchProcessing" defaultMessage="Batch Processing" />
+                    </Typography>
+                  }
+                />
+                <FormControlLabel
+                  control={
+                    <Checkbox
                       checked={model.Configuration.checkSafety === "1"}
                       onChange={handleCheckSafetyChange}
                       color="primary"
@@ -750,7 +772,25 @@ const App = () => {
                   }
                   label={<FormattedMessage id="inferenceSettings.enableCache" defaultMessage="Enable Cache" />}
                 />
+                <FormControlLabel
+                  control={
+                    <Checkbox
+                      checked={model.Configuration.enforceJsonResponse === "1"}
+                      onChange={handleEnforceJsonResponseChange}
+                      color="primary"
+                    />
+                  }
+                  label={<FormattedMessage id="inferenceSettings.enforceJsonResponse" defaultMessage="Enforce JSON Response" />}
+                />
               </FormGroup>
+            </Grid>
+            <Grid item xs={12}>
+              <Typography variant="body2" color="textSecondary">
+                <FormattedMessage
+                  id="inferenceSettings.jsonModeNote"
+                  defaultMessage="Important: When using JSON mode, you must also instruct the model to produce JSON yourself via a system or user message. Without this, the model may generate an unending stream of whitespace until the generation reaches the token limit, resulting in a long-running and seemingly 'stuck' request. Also note that the message content may be partially cut off if finish_reason='length', which indicates the generation exceeded max_tokens or the conversation exceeded the max context length."
+                />
+              </Typography>
             </Grid>
           </Grid>
         )}
@@ -811,6 +851,7 @@ const Tool = () => {
       simulateResponse: DEFAULT_SIMULATE_RESPONSE,
       simulateResponseText: DEFAULT_SIMULATE_RESPONSE_TEXT,
       batchProcessing: DEFAULT_BATCH_PROCESSING,
+      enforceJsonResponse: DEFAULT_ENFORCE_JSON_RESPONSE,
     }
   };
 
@@ -854,7 +895,10 @@ const Tool = () => {
       "tab.simulate": "Simulate",
       "simulate.simulateResponse": "Simulate Response",
       "simulate.simulatedResponseText": "Simulated Response Text",
-      "inferenceSettings.maxBudget": "Maximum Budget ($)",  
+      "inferenceSettings.maxBudget": "Maximum Budget ($)",
+      "inferenceSettings.selectedConfig": "Selected Configuration: {platform} - {model}",
+      "inferenceSettings.enforceJsonResponse": "Enforce JSON Response",
+      "inferenceSettings.jsonModeNote": "Important: When using JSON mode, you must also instruct the model to produce JSON yourself via a system or user message. Without this, the model may generate an unending stream of whitespace until the generation reaches the token limit, resulting in a long-running and seemingly 'stuck' request. Also note that the message content may be partially cut off if finish_reason='length', which indicates the generation exceeded max_tokens or the conversation exceeded the max context length.",
     },
     es: {
       "title": "Conexión LLM",
@@ -896,6 +940,9 @@ const Tool = () => {
       "simulate.simulateResponse": "Simular Respuesta",
       "simulate.simulatedResponseText": "Texto de Respuesta Simulada",
       "inferenceSettings.maxBudget": "Presupuesto Máximo ($)",
+      "inferenceSettings.selectedConfig": "Configuración seleccionada: {platform} - {model}",
+      "inferenceSettings.enforceJsonResponse": "Enforce JSON Response",
+      "inferenceSettings.jsonModeNote": "Importante: Al usar JSON mode, también debe instruir al modelo a producir JSON por sí mismo mediante un mensaje del sistema o del usuario. Sin esto, el modelo puede generar una secuencia continua de espacios en blanco hasta que la generación alcance el límite de tokens, resultando en una solicitud que parece 'atascada'. También tenga en cuenta que el contenido del mensaje puede ser parcialmente cortado si finish_reason='length', que indica que la generación excedió max_tokens o que la conversación excedió la longitud máxima del contexto.",  
     },
     fr: {
       "title": "Connexion LLM",
@@ -937,6 +984,9 @@ const Tool = () => {
       "simulate.simulateResponse": "Simuler la Réponse",
       "simulate.simulatedResponseText": "Texte de Réponse Simulée",
       "inferenceSettings.maxBudget": "Budget Maximum ($)",
+      "inferenceSettings.selectedConfig": "Configuration sélectionnée: {platform} - {model}",
+      "inferenceSettings.enforceJsonResponse": "Enforce JSON Response",
+      "inferenceSettings.jsonModeNote": "Important: Al usar JSON mode, también debe instruir al modelo a producir JSON por sí mismo mediante un mensaje del sistema o del usuario. Sin esto, el modelo puede generar una secuencia continua de espacios en blanco hasta que la generación alcance el límite de tokens, resultando en una solicitud que parece 'atascada'. También tenga en cuenta que el contenido del mensaje puede ser parcialmente cortado si finish_reason='length', que indica que la generación excedió max_tokens o que la conversación excedió la longitud máxima del contexto.",  
     },
     de: {
       "title": "LLM-Verbindung",
@@ -978,6 +1028,9 @@ const Tool = () => {
       "simulate.simulateResponse": "Antwort Simulieren",
       "simulate.simulatedResponseText": "Simulierter Antworttext",
       "inferenceSettings.maxBudget": "Budget Maximum ($)",
+      "inferenceSettings.selectedConfig": "Ausgewählte Konfiguration: {platform} - {model}",
+      "inferenceSettings.enforceJsonResponse": "JSON-Antwort erzwingen",
+      "inferenceSettings.jsonModeNote": "Wichtig: Beim Verwenden von JSON-Modus muss der Modell auch selbst anweisen, JSON zu produzieren, indem Sie ein System- oder Benutzermeldung senden. Ohne dies wird das Modell eine unendliche Sequenz von Leerzeichen produzieren, bis die Generierung das Tokenlimit erreicht oder die Konversation die maximale Kontextlänge überschreitet, was eine scheinbar 'eingefrorene' Anfrage zur Folge hat. Beachten Sie auch, dass der Nachrichteninhalt möglicherweise teilweise abgeschnitten wird, wenn finish_reason='length', was bedeutet, dass die Generierung das Tokenlimit überschritten hat oder die Konversation die maximale Kontextlänge überschritten hat.",  
     },
     pt: {
       "title": "ConecteLLM",
@@ -1019,6 +1072,9 @@ const Tool = () => {
       "simulate.simulateResponse": "Simular Resposta",
       "simulate.simulatedResponseText": "Texto de Resposta Simulado",
       "inferenceSettings.maxBudget": "Budget Máximo ($)",
+      "inferenceSettings.selectedConfig": "Configuração selecionada: {platform} - {model}",
+      "inferenceSettings.enforceJsonResponse": "Enforce JSON Response", 
+      "inferenceSettings.jsonModeNote": "Importante: Al usar JSON mode, también debe instruir al modelo a producir JSON por sí mismo mediante un mensaje del sistema o del usuario. Sin esto, el modelo puede generar una secuencia continua de espacios en blanco hasta que la generación alcance el límite de tokens, resultando en una solicitud que parece 'atascada'. También tenga en cuenta que el contenido del mensaje puede ser parcialmente cortado si finish_reason='length', que indica que la generación excedió max_tokens o que la conversación excedió la longitud máxima del contexto.",  
     },
     pl: {
       "title": "LLM Connect",
@@ -1057,6 +1113,9 @@ const Tool = () => {
       "apiKeyInstructions": "Dla względów bezpieczeństwa, zdefiniuj swoje klucze API jako zmienne środowiskowe. Postępuj zgodnie z {docLink} dla dalszych informacji.",
       "apiKeyInstructions.docLink": "tym linkiem",
       "inferenceSettings.maxBudget": "Budget Maksymalny ($)",
+      "inferenceSettings.selectedConfig": "Wybrana konfiguracja: {platform} - {model}",
+      "inferenceSettings.enforceJsonResponse": "Enforce JSON Response",
+      "inferenceSettings.jsonModeNote": "Ważne: Przy użyciu trybu JSON, model musi również samodzielnie zlecić wyprodukowanie JSON za pomocą wiadomości systemowej lub użytkownika. Bez tego model może wygenerować nieskończoną sekwencję spacji, dopóki generacja nie osiągnie limitu tokenów lub konwersacja nie przekroczy maksymalnej długości kontekstu, co może spowodować pozornie 'zamarzniętą' wnioskowanie. Należy również zauważyć, że treść wiadomości może być częściowo obcięta, jeśli finish_reason='length', co oznacza, że generacja przekroczyła limit tokenów lub konwersacja przekroczyła maksymalną długość kontekstu.",  
     },
     cn: {
       "title": "LLM 连接",
@@ -1098,7 +1157,10 @@ const Tool = () => {
       "simulate.simulateResponse": "模拟响应",
       "simulate.simulatedResponseText": "模拟响应文本",
       "inferenceSettings.maxBudget": "预算最大值 ($)",
-    }, 
+      "inferenceSettings.selectedConfig": "选定配置: {platform} - {model}",
+      "inferenceSettings.enforceJsonResponse": "Enforce JSON Response",
+      "inferenceSettings.jsonModeNote": "重要：使用 JSON 模式时，模型还必须通过系统或用户消息指示自己生成 JSON。否则，模型可能会生成一个无限序列的空白，直到生成达到令牌限制或对话超过最大上下文长度，导致请求看起来‘卡住’。还要注意，如果 finish_reason='length'，则消息内容可能会被部分截断，这表示生成超过了 max_tokens 或对话超过了最大上下文长度。",  
+    },
     ja: {
       "title": "LLM 接続",
       "instructions": "以下に LLM 接続設定とプロンプトを設定します。{note}",
@@ -1139,6 +1201,9 @@ const Tool = () => {
       "simulate.simulateResponse": "シミュレートされた応答",
       "simulate.simulatedResponseText": "シミュレートされた応答テキスト",
       "inferenceSettings.maxBudget": "予算最大値 ($)",
+      "inferenceSettings.selectedConfig": "選択された構成: {platform} - {model}",
+      "inferenceSettings.enforceJsonResponse": "Enforce JSON Response",
+      "inferenceSettings.jsonModeNote": "重要：使用 JSON 模式时，模型还必须通过系统或用户消息指示自己生成 JSON。否则，模型可能会生成一个无限序列的空白，直到生成达到令牌限制或对话超过最大上下文长度，导致请求看起来‘卡住’。还要注意，如果 finish_reason='length'，则消息内容可能会被部分截断，这表示生成超过了 max_tokens 或对话超过了最大上下文长度。",  
     },
     ru: {
       "title": "LLM Connect",
@@ -1180,6 +1245,9 @@ const Tool = () => {
       "simulate.simulateResponse": "Симулировать ответ",
       "simulate.simulatedResponseText": "Текст симулированного ответа",
       "inferenceSettings.maxBudget": "Максимальный бюджет ($)",
+      "inferenceSettings.selectedConfig": "Выбранная конфигурация: {platform} - {model}",
+      "inferenceSettings.enforceJsonResponse": "Enforce JSON Response",
+      "inferenceSettings.jsonModeNote": "Важно: При использовании режима JSON модель также должна самостоятельно указать, чтобы она генерировала JSON с помощью системного или пользовательского сообщения. В противном случае модель может генерировать бесконечную последовательность пробелов, пока генерация не достигнет ограничения токенов или диалог не превысит максимальную длину контекста, что может привести к кажущейся 'замороженной' запросу. Также обратите внимание, что содержимое сообщения может быть частично обрезано, если finish_reason='length', что означает, что генерация превысила ограничение токенов или диалог превысил максимальную длину контекста.",  
     },          
   };
 

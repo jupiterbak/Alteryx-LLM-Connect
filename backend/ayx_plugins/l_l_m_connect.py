@@ -20,7 +20,9 @@ from ayx_python_sdk.core import (
 )
 from ayx_python_sdk.providers.amp_provider.amp_provider_v2 import AMPProviderV2
 import litellm
+from litellm.caching import Cache
 import json
+import os
 #from litellm import completion, get_model_cost
 # from litellm.utils import trim_messages
 
@@ -56,15 +58,22 @@ class LLMConnect(PluginV2):
         self.num_retries = DEFAULT_NUM_RETRIES
         self.batch_processing = self.provider.tool_config.get("batchProcessing") == "1"
         self.max_budget = float(self.provider.tool_config.get("maxBudget")) if self.provider.tool_config.get("maxBudget") else 1.001
-
+        self.enforceJsonResponse = self.provider.tool_config.get("enforceJsonResponse") =="1"
+        
         # Log all the configuration values by converting tool_config to a string
         self.provider.io.info(f"Tool Config: {json.dumps(self.provider.tool_config, indent=2)}")
         
         self.total_cost = 0
         litellm.drop_params = True
-        litellm.set_verbose=False
+        # litellm.set_verbose=True
+        # Set litellm global params
         litellm.max_budget = self.max_budget
-            
+        if self.use_caching:
+            litellm.cache = Cache()
+            litellm.enable_cache()
+        else:
+            litellm.disable_cache()        
+        os.environ["LITELLM_LOCAL_MODEL_COST_MAP"] = "True"
 
     def on_record_batch(self, batch: "pa.Table", anchor: Anchor) -> None:
         """
@@ -92,7 +101,7 @@ class LLMConnect(PluginV2):
         # self.provider.write_to_anchor("Output", batch)  
 
         def my_custom_logging_fn(model_call_dict):
-            self.provider.io.info(f"model call details: {json.dumps(model_call_dict, indent=2)}")      
+            self.provider.io.info(f"model call details: ")      
 
         metadata = batch.schema
         if not any([field_name == self.prompt_field for field_name in metadata.names]):
@@ -102,7 +111,7 @@ class LLMConnect(PluginV2):
         input_dataframe = batch.to_pandas()
 
         if not is_string_dtype(input_dataframe[self.prompt_field]):
-            raise RuntimeError(f"'{self.prompt_field}' column must be of 'string' data type")   
+            raise RuntimeError(f"'{self.prompt_field}' column must be of 'string' data type")
 
         outputs = []
         prompt_tokens_list = []
@@ -122,8 +131,9 @@ class LLMConnect(PluginV2):
                     messages = [
                         {"role": "user", "content": row[self.prompt_field]}
                     ]
-                batch_messages.append(messages)
-
+                batch_messages.append(trim_messages(messages, self.model))
+            
+            self.provider.io.info(f"Batch Requesting messages: {json.dumps(batch_messages, indent=2)}")
             try:
                 completion_kwargs = {
                     "model": self.model,
@@ -133,9 +143,14 @@ class LLMConnect(PluginV2):
                     "max_tokens": self.max_token,
                     "stop": self.stop,
                     "seed": self.seed,
-                    "num_retries": self.num_retries,
-                    
+                    # "num_retries": self.num_retries,
+                    #"response_format": "json_object" if self.enforceJsonResponse=="1" else None                    
                 }
+
+                if self.use_caching:
+                    completion_kwargs["caching"] = True
+                else:
+                    completion_kwargs["caching"] = False
 
                 if self.simulate_response:
                     completion_kwargs["mock_response"] = self.simulate_response_text
@@ -144,6 +159,11 @@ class LLMConnect(PluginV2):
                     completion_kwargs["base_url"] = self.endpoint
                     if self.use_api_key:
                         completion_kwargs["api_key"] = self.api_keys
+                
+                # if self.enforceJsonResponse:
+                #     completion_kwargs["response_format"] = "json_object"
+                # else:
+                #     completion_kwargs["response_format"] = None
 
                 responses = batch_completion(**completion_kwargs)
 
@@ -171,20 +191,19 @@ class LLMConnect(PluginV2):
                 costs = [None] * len(input_dataframe)
 
         else:
-            # Single processing (existing code)
-            for _, row in input_dataframe.iterrows():
+            # Single processing using pandas transform
+            def process_row(row):
                 if self.use_system_prompt:
                     messages = [
                         {"role": "system", "content": self.system_prompt},
-                        {"role": "user", "content": row[self.prompt_field]}
+                        {"role": "user", "content": row}
                     ]
                 else:
-                    messages = [
-                        {"role": "user", "content": row[self.prompt_field]}
-                    ]
+                    messages = [{"role": "user", "content": row}]
                 messages = trim_messages(messages, self.model)
 
                 try:
+                    self.provider.io.info(f"Requesting messages: {json.dumps(messages, indent=2)}")
                     completion_kwargs = {
                         "model": self.model,
                         "messages": messages,
@@ -193,14 +212,25 @@ class LLMConnect(PluginV2):
                         "max_tokens": self.max_token,
                         "stop": self.stop,
                         "seed": self.seed,
-                        "num_retries": self.num_retries,
+                        # "num_retries": self.num_retries,
+                        # "response_format": "json_object" if self.enforceJsonResponse=="1" else None
                         # "check_safety": self.check_safety,
                         # "use_caching": self.use_caching,
                         # "logging_fn": my_custom_logging_fn,
                     }
 
+                    if self.use_caching:
+                        completion_kwargs["caching"] = True
+                    else:
+                        completion_kwargs["caching"] = False
+
                     if self.simulate_response:
                         completion_kwargs["mock_response"] = self.simulate_response_text
+
+                    # if self.enforceJsonResponse:
+                    #     completion_kwargs["response_format"] = "json_object"
+                    # else:
+                    #     completion_kwargs["response_format"] = None
 
                     if self.platform == "Others (Custom)":
                         completion_kwargs["base_url"] = self.endpoint
@@ -217,27 +247,35 @@ class LLMConnect(PluginV2):
                         cost = completion_cost(completion_response=response)
                         self.total_cost += cost
                     else:
-                        cost = 0  # Set cost to 0 for simulated responses
+                        cost = 0
 
-                    outputs.append(output_content)
-                    prompt_tokens_list.append(prompt_tokens)
-                    completion_tokens_list.append(completion_tokens)
-                    costs.append(cost)
+                    return pd.Series({
+                        'output': output_content,
+                        'prompt_tokens': prompt_tokens,
+                        'completion_tokens': completion_tokens,
+                        'cost($)': cost
+                    })
 
                 except Exception as e:
                     self.provider.io.error(f"Error in litellm completion: {str(e)}")
-                    outputs.append(None)
-                    prompt_tokens_list.append(None)
-                    completion_tokens_list.append(None)
-                    costs.append(None)
+                    return pd.Series({
+                        'output': None,
+                        'prompt_tokens': None,
+                        'completion_tokens': None,
+                        'cost($)': None
+                    })
 
-        # Add results to the dataframe
-        input_dataframe['output'] = outputs
-        input_dataframe['prompt_tokens'] = prompt_tokens_list
-        input_dataframe['completion_tokens'] = completion_tokens_list
-        input_dataframe['cost($)'] = costs
+            # Apply the transform function to the prompt field
+            result = input_dataframe[self.prompt_field].transform(process_row)
+            
+            # Add results to the dataframe
+            input_dataframe['output'] = result['output']
+            input_dataframe['prompt_tokens'] = result['prompt_tokens']
+            input_dataframe['completion_tokens'] = result['completion_tokens']
+            input_dataframe['cost($)'] = result['cost($)']
 
         # Write the updated dataframe to the output anchor
+        self.provider.io.info(f"Writing to output anchor.")
         self.provider.write_to_anchor("Output", pa.Table.from_pandas(input_dataframe))
 
     def on_incoming_connection_complete(self, anchor: Anchor) -> None:
