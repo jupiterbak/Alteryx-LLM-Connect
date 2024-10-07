@@ -32,6 +32,7 @@ To install ConnectLLM for Alteryx:
    - Set inference parameters (temperature, max tokens, etc.)
    - Choose between live API calls or simulation mode
    - Configure caching options to optimize API usage
+   - Select Batch inference to process multiple records in a single API call
 4. Run your workflow to generate batch completions
 
 ## Configuration
