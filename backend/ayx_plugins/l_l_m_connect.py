@@ -14,20 +14,21 @@
 
 """Example pass through tool."""
 
-from ayx_python_sdk.core import (
-    Anchor,
-    PluginV2,
-)
-from ayx_python_sdk.providers.amp_provider.amp_provider_v2 import AMPProviderV2
-import litellm
-from litellm.caching import Cache
 import json
 import os
-#from litellm import completion, get_model_cost
-# from litellm.utils import trim_messages
+from typing import Any, Dict, List
+
+import pandas as pd
+import pyarrow as pa
+from ayx_python_sdk.core import Anchor, PluginV2
+from ayx_python_sdk.providers.amp_provider.amp_provider_v2 import AMPProviderV2
+from litellm import Cache, batch_completion, completion, completion_cost
+from litellm.utils import trim_messages
+from openai import OpenAIError
+from pandas.core.dtypes.common import is_string_dtype
+import litellm
 
 DEFAULT_NUM_RETRIES = 3
-
 
 class LLMConnect(PluginV2):
     """A sample Plugin that passes data from an input connection to an output connection."""
@@ -90,15 +91,8 @@ class LLMConnect(PluginV2):
         anchor
             A namedtuple('Anchor', ['name', 'connection']) containing input connection identifiers.
         """
-        from pandas.core.dtypes.common import is_string_dtype
-        from openai import OpenAIError
-        import pandas as pd
-        import pyarrow as pa
-        from pyarrow import RecordBatch, Table
-        import litellm
-        from litellm import completion, completion_cost, batch_completion
-        from litellm.utils import trim_messages
         # self.provider.write_to_anchor("Output", batch)  
+        # log the batch
 
         def my_custom_logging_fn(model_call_dict):
             self.provider.io.info(f"model call details: ")      
@@ -143,6 +137,8 @@ class LLMConnect(PluginV2):
                     "max_tokens": self.max_token,
                     "stop": self.stop,
                     "seed": self.seed,
+                    "drop_params": True,
+                    "timeout": 30,
                     # "num_retries": self.num_retries,
                     #"response_format": "json_object" if self.enforceJsonResponse=="1" else None                    
                 }
@@ -173,8 +169,12 @@ class LLMConnect(PluginV2):
                     completion_tokens = response['usage']['completion_tokens']
                     
                     if not self.simulate_response:
-                        cost = completion_cost(completion_response=response)
-                        self.total_cost += cost
+                        try:	
+                            cost = completion_cost(completion_response=response)
+                            self.total_cost += cost
+                        except Exception as e:
+                            self.provider.io.warn(f"Model {self.model} does not support cost calculation.")
+                            cost = 0 # Set cost to 0 if model does not support cost calculation
                     else:
                         cost = 0  # Set cost to 0 for simulated responses
 
@@ -184,11 +184,17 @@ class LLMConnect(PluginV2):
                     costs.append(cost)
 
             except Exception as e:
-                self.provider.io.error(f"Error in litellm batch completion: {str(e)}")
+                self.provider.io.error(f"Error in batch completion: {str(e)}")
                 outputs = [None] * len(input_dataframe)
                 prompt_tokens_list = [None] * len(input_dataframe)
                 completion_tokens_list = [None] * len(input_dataframe)
                 costs = [None] * len(input_dataframe)
+            
+            # Add results to the dataframe
+            input_dataframe['output'] = outputs
+            input_dataframe['prompt_tokens'] = prompt_tokens_list
+            input_dataframe['completion_tokens'] = completion_tokens_list
+            input_dataframe['cost($)'] = costs
 
         else:
             # Single processing using pandas transform
@@ -212,6 +218,7 @@ class LLMConnect(PluginV2):
                         "max_tokens": self.max_token,
                         "stop": self.stop,
                         "seed": self.seed,
+                        "timeout": 30,
                         # "num_retries": self.num_retries,
                         # "response_format": "json_object" if self.enforceJsonResponse=="1" else None
                         # "check_safety": self.check_safety,
@@ -243,11 +250,15 @@ class LLMConnect(PluginV2):
                     prompt_tokens = response['usage']['prompt_tokens']
                     completion_tokens = response['usage']['completion_tokens']
                     
-                    if not self.simulate_response:
-                        cost = completion_cost(completion_response=response)
-                        self.total_cost += cost
+                    if not self.simulate_response and not self.platform == "Others (Custom)":
+                        try:
+                            cost = completion_cost(completion_response=response)
+                            self.total_cost += cost
+                        except Exception as e:
+                            self.provider.io.warn(f"Model {self.model} does not support cost calculation.")
+                            cost = 0 # Set cost to 0 if model does not support cost calculation
                     else:
-                        cost = 0
+                        cost = 0 # Set cost to 0 for simulated responses
 
                     return pd.Series({
                         'output': output_content,
