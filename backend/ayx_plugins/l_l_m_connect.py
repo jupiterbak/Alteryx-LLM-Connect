@@ -17,18 +17,21 @@
 import json
 import os
 from typing import Any, Dict, List
+from datetime import datetime
 
 import pandas as pd
 import pyarrow as pa
 from ayx_python_sdk.core import Anchor, PluginV2
 from ayx_python_sdk.providers.amp_provider.amp_provider_v2 import AMPProviderV2
-from litellm import Cache, batch_completion, completion, completion_cost
+from litellm import Cache, batch_completion, completion, completion_cost, completion_with_retries
 from litellm.utils import trim_messages
 from openai import OpenAIError
 from pandas.core.dtypes.common import is_string_dtype
 import litellm
 
-DEFAULT_NUM_RETRIES = 3
+DEFAULT_NUM_RETRIES = 0
+os.environ["LITELLM_LOCAL_MODEL_COST_MAP"] = "True"
+os.environ["LITELLM_MODE"] = "PRODUCTION"
 
 class LLMConnect(PluginV2):
     """A sample Plugin that passes data from an input connection to an output connection."""
@@ -60,21 +63,57 @@ class LLMConnect(PluginV2):
         self.batch_processing = self.provider.tool_config.get("batchProcessing") == "1"
         self.max_budget = float(self.provider.tool_config.get("maxBudget")) if self.provider.tool_config.get("maxBudget") else 1.001
         self.enforceJsonResponse = self.provider.tool_config.get("enforceJsonResponse") =="1"
-        
-        # Log all the configuration values by converting tool_config to a string
+
+        # log tool config
         self.provider.io.info(f"Tool Config: {json.dumps(self.provider.tool_config, indent=2)}")
         
         self.total_cost = 0
+        self.start_time = datetime.now()
+
+        self.max_log_size = 10 * 1024 * 1024  # 10MB in bytes
+        self.log_file = None
+        self.create_new_log_file()
+
         litellm.drop_params = True
         # litellm.set_verbose=True
         # Set litellm global params
-        litellm.max_budget = self.max_budget
+        # litellm.max_budget = self.max_budget
         if self.use_caching:
             litellm.cache = Cache()
             litellm.enable_cache()
         else:
             litellm.disable_cache()        
-        os.environ["LITELLM_LOCAL_MODEL_COST_MAP"] = "True"
+
+    def create_new_log_file(self):
+        if self.log_file:
+            self.log_file.close()
+
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        unique_id = f"{timestamp}_{os.getpid()}"
+        log_filename = f"llm_connect_cost_{unique_id}.log"
+        self.log_path = os.path.expanduser(f"~/.ayx/{log_filename}")
+
+        # Ensure the directory exists
+        os.makedirs(os.path.dirname(self.log_path), exist_ok=True)
+
+        # Open the file stream
+        self.log_file = open(self.log_path, 'w')
+        self.log_file.write(f"Start Time: {datetime.now()}\n")
+        self.log_file.write(f"Model: {self.model}\n")
+        self.log_file.write(f"Platform: {self.platform}\n")
+        self.provider.io.info(f"Log file will be written to: {self.log_path}")
+
+        # Log all the configuration values by converting tool_config to a string
+        self.log_file.write(f"Tool Config: {json.dumps(self.provider.tool_config, indent=2)}\n")
+
+    def check_log_size(self):
+        if os.path.getsize(self.log_path) > self.max_log_size:
+            self.create_new_log_file()
+
+    def my_custom_logging_fn(self, model_call_dict):
+        self.check_log_size()
+        self.log_file.write(f"model call log details: {model_call_dict}\n")
+        self.log_file.flush()  # Ensure the data is written to the file
 
     def on_record_batch(self, batch: "pa.Table", anchor: Anchor) -> None:
         """
@@ -94,9 +133,6 @@ class LLMConnect(PluginV2):
         # self.provider.write_to_anchor("Output", batch)  
         # log the batch
 
-        def my_custom_logging_fn(model_call_dict):
-            self.provider.io.info(f"model call details: ")      
-
         metadata = batch.schema
         if not any([field_name == self.prompt_field for field_name in metadata.names]):
             raise RuntimeError(
@@ -106,6 +142,9 @@ class LLMConnect(PluginV2):
 
         if not is_string_dtype(input_dataframe[self.prompt_field]):
             raise RuntimeError(f"'{self.prompt_field}' column must be of 'string' data type")
+        
+        # log the input dataframe size
+        self.provider.io.info(f"Input DataFrame size: {input_dataframe.shape}")
 
         outputs = []
         prompt_tokens_list = []
@@ -139,7 +178,7 @@ class LLMConnect(PluginV2):
                     "seed": self.seed,
                     "drop_params": True,
                     "timeout": 30,
-                    # "num_retries": self.num_retries,
+                    "num_retries": self.num_retries,
                     #"response_format": "json_object" if self.enforceJsonResponse=="1" else None                    
                 }
 
@@ -219,11 +258,8 @@ class LLMConnect(PluginV2):
                         "stop": self.stop,
                         "seed": self.seed,
                         "timeout": 30,
-                        # "num_retries": self.num_retries,
-                        # "response_format": "json_object" if self.enforceJsonResponse=="1" else None
-                        # "check_safety": self.check_safety,
-                        # "use_caching": self.use_caching,
-                        # "logging_fn": my_custom_logging_fn,
+                        "num_retries": self.num_retries,
+                        "logger_fn": self.my_custom_logging_fn,
                     }
 
                     if self.use_caching:
@@ -321,3 +357,9 @@ class LLMConnect(PluginV2):
         # Initialize the output dataframe
         self.provider.io.info(f"{self.name} tool done.")
         self.provider.io.info(f"Total cost: ${self.total_cost:.4f}")
+
+        # Write final information and close the log file
+        end_time = datetime.now()
+        self.log_file.write(f"End Time: {end_time}\n")
+        self.log_file.write(f"Total Cost: ${self.total_cost:.4f}\n")
+        self.log_file.close()
