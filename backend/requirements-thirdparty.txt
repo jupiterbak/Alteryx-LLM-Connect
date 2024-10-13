@@ -1,3 +1,5 @@
 ayx_python_sdk==2.4.1
 litellm
 tenacity
+nest-asyncio>=1.5.4
+requests
