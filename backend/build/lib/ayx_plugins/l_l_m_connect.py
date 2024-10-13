@@ -29,7 +29,7 @@ from openai import OpenAIError
 from pandas.core.dtypes.common import is_string_dtype
 import litellm
 
-DEFAULT_NUM_RETRIES = 0
+DEFAULT_NUM_RETRIES = 1
 os.environ["LITELLM_LOCAL_MODEL_COST_MAP"] = "True"
 os.environ["LITELLM_MODE"] = "PRODUCTION"
 
@@ -74,15 +74,15 @@ class LLMConnect(PluginV2):
         self.log_file = None
         self.create_new_log_file()
 
-        litellm.drop_params = True
-        # litellm.set_verbose=True
-        # Set litellm global params
+        # litellm.drop_params = True
+        # # litellm.set_verbose=True
+        # # Set litellm global params
         # litellm.max_budget = self.max_budget
-        if self.use_caching:
-            litellm.cache = Cache()
-            litellm.enable_cache()
-        else:
-            litellm.disable_cache()        
+        # if self.use_caching:
+        #     litellm.cache = Cache()
+        #     litellm.enable_cache()
+        # else:
+        #     litellm.disable_cache()        
 
     def create_new_log_file(self):
         if self.log_file:
