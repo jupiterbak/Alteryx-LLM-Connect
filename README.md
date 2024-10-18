@@ -1,10 +1,10 @@
 # ConnectLLM for Alteryx
 
-ConnectLLM is a powerful and flexible custom Tool for Alteryx that enables seamless integration with Large Language Models (LLMs) for batch completions. This tool simplifies the process of interacting with various language models, making it easy for Alteryx users to incorporate advanced natural language processing capabilities into their workflows.
+ConnectLLM is a powerful and flexible custom Tool for Alteryx that enables seamless integration with over 1000 Large Language Models (LLMs) across more than 20 platforms for batch completions. This tool simplifies the process of interacting with a vast array of language models, making it easy for Alteryx users to incorporate advanced natural language processing capabilities into their workflows, regardless of their preferred AI provider or model.
 
 ## Features
 
-- Support for 1000+ LLMs models across 20+ platforms
+- Support for 1000+ LLM models across 20+ platforms
 - Integration with major AI providers including OpenAI, Microsoft Azure, Google (Gemini and Vertex AI), Mistral AI, AWS Bedrock, IBM, and more
 - Batch processing for efficient and fast completions
 - Customizable inference parameters
