@@ -74,15 +74,19 @@ class LLMConnect(PluginV2):
         self.log_file = None
         self.create_new_log_file()
 
-        # litellm.drop_params = True
-        # # litellm.set_verbose=True
-        # # Set litellm global params
-        # litellm.max_budget = self.max_budget
-        # if self.use_caching:
-        #     litellm.cache = Cache()
-        #     litellm.enable_cache()
-        # else:
-        #     litellm.disable_cache()        
+        litellm.drop_params = True
+        litellm.set_verbose=False
+        # Set litellm global params
+        litellm.max_budget = self.max_budget
+        if self.use_caching:
+            self.provider.io.info(f"Using caching")
+            cache_path = os.path.expanduser("~/.ayx/litellm_cache/")
+            os.makedirs(os.path.dirname(cache_path), exist_ok=True)
+            litellm.cache = Cache(type="disk", disk_cache_dir=cache_path)
+            litellm.enable_cache()
+        else:
+            self.provider.io.info(f"Not using caching")
+            litellm.disable_cache()        
 
     def create_new_log_file(self):
         if self.log_file:
@@ -177,6 +181,7 @@ class LLMConnect(PluginV2):
                     "stop": self.stop,
                     "seed": self.seed,
                     "drop_params": True,
+                    "stream": False,
                     "timeout": 30,
                     "num_retries": self.num_retries,
                     #"response_format": "json_object" if self.enforceJsonResponse=="1" else None                    
@@ -258,6 +263,8 @@ class LLMConnect(PluginV2):
                         "stop": self.stop,
                         "seed": self.seed,
                         "timeout": 30,
+                        "stream": False,
+                        "drop_params": True,
                         "num_retries": self.num_retries,
                         "logger_fn": self.my_custom_logging_fn,
                     }
@@ -279,8 +286,9 @@ class LLMConnect(PluginV2):
                         completion_kwargs["base_url"] = self.endpoint
                         if self.use_api_key:
                             completion_kwargs["api_key"] = self.api_keys
-
+                    # self.provider.io.info(f"Sending request to {self.model}")
                     response = completion(**completion_kwargs)
+                    #self.provider.io.info(f"Response: {response}")
 
                     output_content = response['choices'][0]['message']['content']
                     prompt_tokens = response['usage']['prompt_tokens']
