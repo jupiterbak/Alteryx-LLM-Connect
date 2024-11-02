@@ -77,7 +77,7 @@ class LLMConnect(PluginV2):
         litellm.drop_params = True
         litellm.set_verbose=False
         # Set litellm global params
-        litellm.max_budget = self.max_budget
+        litellm.max_budget = 10000.0 #self.max_budget
         if self.use_caching:
             self.provider.io.info(f"Using caching")
             cache_path = os.path.expanduser("~/.ayx/litellm_cache/")
@@ -170,7 +170,7 @@ class LLMConnect(PluginV2):
                     ]
                 batch_messages.append(trim_messages(messages, self.model))
             
-            self.provider.io.info(f"Batch Requesting messages: {json.dumps(batch_messages, indent=2)}")
+            # self.provider.io.info(f"Batch Requesting messages: {json.dumps(batch_messages, indent=2)}")
             try:
                 completion_kwargs = {
                     "model": self.model,
@@ -204,9 +204,9 @@ class LLMConnect(PluginV2):
                 #     completion_kwargs["response_format"] = "json_object"
                 # else:
                 #     completion_kwargs["response_format"] = None
-
+                self.provider.io.info(f"Sending batch request...")
                 responses = batch_completion(**completion_kwargs)
-
+                self.provider.io.info(f"Batch response received.")
                 for response in responses:
                     output_content = response['choices'][0]['message']['content']
                     prompt_tokens = response['usage']['prompt_tokens']
@@ -286,9 +286,9 @@ class LLMConnect(PluginV2):
                         completion_kwargs["base_url"] = self.endpoint
                         if self.use_api_key:
                             completion_kwargs["api_key"] = self.api_keys
-                    # self.provider.io.info(f"Sending request to {self.model}")
+                    self.provider.io.info(f"Sending request...")
                     response = completion(**completion_kwargs)
-                    #self.provider.io.info(f"Response: {response}")
+                    self.provider.io.info(f"Response received.")
 
                     output_content = response['choices'][0]['message']['content']
                     prompt_tokens = response['usage']['prompt_tokens']

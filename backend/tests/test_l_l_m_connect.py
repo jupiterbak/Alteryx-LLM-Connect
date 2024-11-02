@@ -1,14 +1,7 @@
-
-
-
-
-
-
-
 from ayx_python_sdk.core import Anchor
 from ayx_python_sdk.core.testing import BatchTuple, SdkToolTestService
 
-from backend.ayx_plugins import LLMConnect
+from backend.ayx_plugins.l_l_m_connect import LLMConnect
 
 import pyarrow as pa
 from pyarrow import RecordBatch
@@ -17,16 +10,16 @@ import pytest
 
 
 TEST_SCHEMA = pa.schema([
-    ('col1', pa.int64()),
-    ('col2', pa.float64())
+    ('prompt', pa.string()),
 ])
 
 
 @pytest.fixture
 def small_batches():
     input_data = [
-        [1, 2, 3],
-        [0.1, 0.2, 0.3]
+        ["Tell me a fun fact about programming"],
+        ["Tell me a fun fact about programming"],
+        ["Tell me a fun fact about programming"],
     ]
     output_data = input_data
     return BatchTuple(
@@ -39,8 +32,8 @@ def small_batches():
 def medium_batches():
     repeat = 200
     input_data = [
-        [1, 2, 3] * repeat,
-        [0.1, 0.2, 0.3] * repeat
+        ["Tell me a fun fact about programming"] * repeat,
+        ["Tell me a fun fact about programming"] * repeat
     ]
     output_data = input_data
     return BatchTuple(
@@ -53,8 +46,8 @@ def medium_batches():
 def large_batches():
     repeat = 20000
     input_data = [
-        [1, 2, 3] * repeat,
-        [0.1, 0.2, 0.3] * repeat
+        ["Tell me a fun fact about programming"] * repeat,
+        ["Tell me a fun fact about programming"] * repeat
     ]
     output_data = input_data
     return BatchTuple(
