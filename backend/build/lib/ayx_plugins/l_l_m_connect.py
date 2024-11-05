@@ -23,7 +23,8 @@ import pandas as pd
 import pyarrow as pa
 from ayx_python_sdk.core import Anchor, PluginV2
 from ayx_python_sdk.providers.amp_provider.amp_provider_v2 import AMPProviderV2
-from litellm import Cache, batch_completion, completion, completion_cost, completion_with_retries
+from litellm import Cache, batch_completion, completion, completion_cost, completion_with_retries, Router
+from litellm.router import RetryPolicy, AllowedFailsPolicy
 from litellm.utils import trim_messages
 from openai import OpenAIError
 from pandas.core.dtypes.common import is_string_dtype
@@ -45,22 +46,22 @@ class LLMConnect(PluginV2):
         self.platform = self.provider.tool_config.get("platform")
         self.endpoint = self.provider.tool_config.get("endpoint")
         self.use_api_key = self.provider.tool_config.get("useApiKey") == "1"
-        # self.api_keys = self.provider.tool_config("apiKeys")
-        self.model = self.provider.tool_config.get("model")
-        self.temperature = float(self.provider.tool_config.get("temperature"))
-        self.top_p = float(self.provider.tool_config.get("topP"))
-        self.max_token = int(self.provider.tool_config.get("maxToken"))
-        self.stop = self.provider.tool_config.get("stop")
+        self.api_keys = self.provider.tool_config.get("apiKeys") if self.use_api_key else None
+        self.model = self.provider.tool_config.get("model") if self.provider.tool_config.get("model") else "gpt-4o"
+        self.temperature = float(self.provider.tool_config.get("temperature")) if self.provider.tool_config.get("temperature") else 0.7
+        self.top_p = float(self.provider.tool_config.get("topP")) if self.provider.tool_config.get("topP") else 1.0
+        self.max_token = int(self.provider.tool_config.get("maxToken")) if self.provider.tool_config.get("maxToken") else 100
+        self.stop = self.provider.tool_config.get("stop") if self.provider.tool_config.get("stop") else None
         self.seed = int(self.provider.tool_config.get("seed")) if self.provider.tool_config.get("seed") else None
-        self.check_safety = self.provider.tool_config.get("checkSafety") == "1"
-        self.use_caching = self.provider.tool_config.get("useCaching") == "1"
-        self.prompt_field = self.provider.tool_config.get("promptField")
-        self.system_prompt = self.provider.tool_config.get("systemPrompt")
-        self.use_system_prompt = self.provider.tool_config.get("useSystemPrompt") == "1"
-        self.simulate_response = self.provider.tool_config.get("simulateResponse") == "1"
-        self.simulate_response_text = self.provider.tool_config.get("simulateResponseText")
-        self.num_retries = DEFAULT_NUM_RETRIES
-        self.batch_processing = self.provider.tool_config.get("batchProcessing") == "1"
+        self.check_safety = self.provider.tool_config.get("checkSafety") == "1" if self.provider.tool_config.get("checkSafety") else False
+        self.use_caching = self.provider.tool_config.get("useCaching") == "1" if self.provider.tool_config.get("useCaching") else False
+        self.prompt_field = self.provider.tool_config.get("promptField") if self.provider.tool_config.get("promptField") else "prompt"
+        self.system_prompt = self.provider.tool_config.get("systemPrompt") if self.provider.tool_config.get("systemPrompt") else None
+        self.use_system_prompt = self.provider.tool_config.get("useSystemPrompt") == "1" if self.provider.tool_config.get("useSystemPrompt") else False
+        self.simulate_response = self.provider.tool_config.get("simulateResponse") == "1" if self.provider.tool_config.get("simulateResponse") else False
+        self.simulate_response_text = self.provider.tool_config.get("simulateResponseText") if self.provider.tool_config.get("simulateResponseText") else None
+        self.num_retries = int(self.provider.tool_config.get("numRetries")) if self.provider.tool_config.get("numRetries") else DEFAULT_NUM_RETRIES
+        self.batch_processing = self.provider.tool_config.get("batchProcessing") == "1" if self.provider.tool_config.get("batchProcessing") else False
         self.max_budget = float(self.provider.tool_config.get("maxBudget")) if self.provider.tool_config.get("maxBudget") else 1.001
         self.enforceJsonResponse = self.provider.tool_config.get("enforceJsonResponse") =="1"
 
@@ -142,13 +143,58 @@ class LLMConnect(PluginV2):
             raise RuntimeError(
                 f"Incoming data must contain a column with the prompt field: '{self.prompt_field}'"
             )
-        input_dataframe = batch.to_pandas()
-
+        # input_dataframe = pd.DataFrame(batch.to_pandas(split_blocks=True))
+        input_dataframe = batch.to_pandas(split_blocks=False)
         if not is_string_dtype(input_dataframe[self.prompt_field]):
             raise RuntimeError(f"'{self.prompt_field}' column must be of 'string' data type")
         
         # log the input dataframe size
         self.provider.io.info(f"Input DataFrame size: {input_dataframe.shape}")
+
+        # Initialize Router
+        # Add Router configuration
+        model_list = [
+            {
+                "model_name": self.model, # model alias
+                "litellm_params": {
+                    "model": self.model, # actual model name
+                    "stream": False,
+                    "drop_params": True,
+                    "timeout": 10,
+                    "max_parallel_requests": 30,
+                    "request_timeout": 10,
+                    # "rpm": 30,
+                }       
+            }
+        ]   
+        # Initialize Retry Policy
+        retry_policy = RetryPolicy(
+            ContentPolicyViolationErrorRetries=self.num_retries,         # run 3 retries for ContentPolicyViolationErrors
+            AuthenticationErrorRetries=0,                 # run 0 retries for AuthenticationErrorRetries
+            BadRequestErrorRetries=0,
+            TimeoutErrorRetries=self.num_retries,
+            RateLimitErrorRetries=0,
+        )
+
+        # Initialize Allowed Fails Policy
+        allowed_fails_policy = AllowedFailsPolicy(
+            ContentPolicyViolationErrorAllowedFails=1000, # Allow 1000 ContentPolicyViolationError before cooling down a deployment
+            RateLimitErrorAllowedFails=0,               # Allow 0 RateLimitErrors before cooling down a deployment
+            TimeoutErrorAllowedFails=self.num_retries,
+        )   
+
+        # Initialize Router
+        router = Router(
+            model_list=model_list,
+            routing_strategy="usage-based-routing-v2",
+            default_max_parallel_requests=30,
+            num_retries=self.num_retries,
+            retry_after=100,
+            cooldown_time=300,     # cooldown time in seconds
+            retry_policy=retry_policy,
+            allowed_fails_policy=allowed_fails_policy,
+            timeout=10,
+        )   
 
         outputs = []
         prompt_tokens_list = []
@@ -182,8 +228,6 @@ class LLMConnect(PluginV2):
                     "seed": self.seed,
                     "drop_params": True,
                     "stream": False,
-                    "timeout": 10,
-                    "num_retries": self.num_retries,
                     #"response_format": "json_object" if self.enforceJsonResponse=="1" else None                    
                 }
 
@@ -204,9 +248,11 @@ class LLMConnect(PluginV2):
                 #     completion_kwargs["response_format"] = "json_object"
                 # else:
                 #     completion_kwargs["response_format"] = None
+                
                 self.provider.io.info(f"Sending batch request...")
                 responses = batch_completion(**completion_kwargs)
                 self.provider.io.info(f"Batch response received.")
+
                 for response in responses:
                     output_content = response['choices'][0]['message']['content']
                     prompt_tokens = response['usage']['prompt_tokens']
@@ -262,10 +308,9 @@ class LLMConnect(PluginV2):
                         "max_tokens": self.max_token,
                         "stop": self.stop,
                         "seed": self.seed,
-                        "timeout": 10,
+
                         "stream": False,
                         "drop_params": True,
-                        "num_retries": self.num_retries,
                         "logger_fn": self.my_custom_logging_fn,
                     }
 
@@ -286,8 +331,9 @@ class LLMConnect(PluginV2):
                         completion_kwargs["base_url"] = self.endpoint
                         if self.use_api_key:
                             completion_kwargs["api_key"] = self.api_keys
+                    
                     self.provider.io.info(f"Sending request...")
-                    response = completion(**completion_kwargs)
+                    response = router.completion(**completion_kwargs)
                     self.provider.io.info(f"Response received.")
 
                     output_content = response['choices'][0]['message']['content']
