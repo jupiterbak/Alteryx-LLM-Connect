@@ -23,8 +23,7 @@ import pandas as pd
 import pyarrow as pa
 from ayx_python_sdk.core import Anchor, PluginV2
 from ayx_python_sdk.providers.amp_provider.amp_provider_v2 import AMPProviderV2
-from litellm import Cache, batch_completion, completion, completion_cost, completion_with_retries, Router
-from litellm.router import RetryPolicy, AllowedFailsPolicy
+from litellm import Cache, batch_completion, completion, completion_cost, completion_with_retries
 from litellm.utils import trim_messages
 from openai import OpenAIError
 from pandas.core.dtypes.common import is_string_dtype
@@ -151,51 +150,6 @@ class LLMConnect(PluginV2):
         # log the input dataframe size
         self.provider.io.info(f"Input DataFrame size: {input_dataframe.shape}")
 
-        # Initialize Router
-        # Add Router configuration
-        model_list = [
-            {
-                "model_name": self.model, # model alias
-                "litellm_params": {
-                    "model": self.model, # actual model name
-                    "stream": False,
-                    "drop_params": True,
-                    "timeout": 10,
-                    "max_parallel_requests": 30,
-                    "request_timeout": 10,
-                    # "rpm": 30,
-                }       
-            }
-        ]   
-        # Initialize Retry Policy
-        retry_policy = RetryPolicy(
-            ContentPolicyViolationErrorRetries=self.num_retries,         # run 3 retries for ContentPolicyViolationErrors
-            AuthenticationErrorRetries=0,                 # run 0 retries for AuthenticationErrorRetries
-            BadRequestErrorRetries=0,
-            TimeoutErrorRetries=self.num_retries,
-            RateLimitErrorRetries=0,
-        )
-
-        # Initialize Allowed Fails Policy
-        allowed_fails_policy = AllowedFailsPolicy(
-            ContentPolicyViolationErrorAllowedFails=1000, # Allow 1000 ContentPolicyViolationError before cooling down a deployment
-            RateLimitErrorAllowedFails=0,               # Allow 0 RateLimitErrors before cooling down a deployment
-            TimeoutErrorAllowedFails=self.num_retries,
-        )   
-
-        # Initialize Router
-        router = Router(
-            model_list=model_list,
-            routing_strategy="usage-based-routing-v2",
-            default_max_parallel_requests=30,
-            num_retries=self.num_retries,
-            retry_after=100,
-            cooldown_time=300,     # cooldown time in seconds
-            retry_policy=retry_policy,
-            allowed_fails_policy=allowed_fails_policy,
-            timeout=10,
-        )   
-
         outputs = []
         prompt_tokens_list = []
         completion_tokens_list = []
@@ -228,6 +182,8 @@ class LLMConnect(PluginV2):
                     "seed": self.seed,
                     "drop_params": True,
                     "stream": False,
+                    "timeout": 10,
+                    "num_retries": self.num_retries,
                     #"response_format": "json_object" if self.enforceJsonResponse=="1" else None                    
                 }
 
@@ -308,9 +264,10 @@ class LLMConnect(PluginV2):
                         "max_tokens": self.max_token,
                         "stop": self.stop,
                         "seed": self.seed,
-
+                        "timeout": 10,
                         "stream": False,
                         "drop_params": True,
+                        "num_retries": self.num_retries,
                         "logger_fn": self.my_custom_logging_fn,
                     }
 
@@ -333,7 +290,7 @@ class LLMConnect(PluginV2):
                             completion_kwargs["api_key"] = self.api_keys
                     
                     self.provider.io.info(f"Sending request...")
-                    response = router.completion(**completion_kwargs)
+                    response = completion(**completion_kwargs)
                     self.provider.io.info(f"Response received.")
 
                     output_content = response['choices'][0]['message']['content']

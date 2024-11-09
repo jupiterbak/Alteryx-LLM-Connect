@@ -1,6 +1,7 @@
 setup.py
 ayx_plugins/__init__.py
 ayx_plugins/l_l_m_connect.py
+ayx_plugins/l_l_m_connect_advanced.py
 ayx_plugins/testing.py
 ayx_plugins.egg-info/PKG-INFO
 ayx_plugins.egg-info/SOURCES.txt
