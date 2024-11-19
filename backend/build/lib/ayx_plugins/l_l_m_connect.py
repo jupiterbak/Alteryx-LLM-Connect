@@ -119,6 +119,162 @@ class LLMConnect(PluginV2):
         self.log_file.write(f"model call log details: {model_call_dict}\n")
         self.log_file.flush()  # Ensure the data is written to the file
 
+    def process_row(self, row):
+        """Process a single row of data through the LLM."""
+        if self.use_system_prompt:
+            messages = [
+                {"role": "system", "content": self.system_prompt},
+                {"role": "user", "content": row}
+            ]
+        else:
+            messages = [{"role": "user", "content": row}]
+        messages = trim_messages(messages, self.model)
+
+        try:
+            self.provider.io.info(f"Requesting messages: {json.dumps(messages, indent=2)}")
+            completion_kwargs = {
+                "model": self.model,
+                "messages": messages,
+                "temperature": self.temperature,
+                "top_p": self.top_p,
+                "max_tokens": self.max_token,
+                "stop": self.stop,
+                "seed": self.seed,
+                "timeout": 10,
+                "stream": False,
+                "drop_params": False,
+                "num_retries": self.num_retries,
+                "logger_fn": self.my_custom_logging_fn,
+            }
+
+            if self.use_caching:
+                completion_kwargs["caching"] = True
+            else:
+                completion_kwargs["caching"] = False
+
+            if self.simulate_response:
+                completion_kwargs["mock_response"] = self.simulate_response_text
+
+            if self.platform == "Others (Custom)":
+                completion_kwargs["base_url"] = self.endpoint
+                if self.use_api_key:
+                    completion_kwargs["api_key"] = self.api_keys
+            
+            self.provider.io.info(f"Sending request...")
+            response = completion(**completion_kwargs)
+            self.provider.io.info(f"Response received.")
+
+            output_content = response['choices'][0]['message']['content']
+            prompt_tokens = response['usage']['prompt_tokens']
+            completion_tokens = response['usage']['completion_tokens']
+            
+            if not self.simulate_response and not self.platform == "Others (Custom)":
+                try:
+                    cost = completion_cost(completion_response=response)
+                    self.total_cost += cost
+                except Exception as e:
+                    self.provider.io.warn(f"Model {self.model} does not support cost calculation.")
+                    cost = 0 # Set cost to 0 if model does not support cost calculation
+            else:
+                cost = 0 # Set cost to 0 for simulated responses
+
+            return pd.Series({
+                'output': output_content,
+                'prompt_tokens': prompt_tokens,
+                'completion_tokens': completion_tokens,
+                'cost($)': cost
+            })
+
+        except Exception as e:
+            self.provider.io.error(f"Error in litellm completion: {str(e)}")
+            return pd.Series({
+                'output': None,
+                'prompt_tokens': None,
+                'completion_tokens': None,
+                'cost($)': None
+            })
+
+    def process_batch(self, input_dataframe):
+        """Process multiple rows of data through the LLM in batch mode."""
+        batch_messages = []
+        for _, row in input_dataframe.iterrows():
+            if self.use_system_prompt:
+                messages = [
+                    {"role": "system", "content": self.system_prompt},
+                    {"role": "user", "content": row[self.prompt_field]}
+                ]
+            else:
+                messages = [
+                    {"role": "user", "content": row[self.prompt_field]}
+                ]
+            batch_messages.append(trim_messages(messages, self.model))
+        
+        try:
+            completion_kwargs = {
+                "model": self.model,
+                "messages": batch_messages,
+                "temperature": self.temperature,
+                "top_p": self.top_p,
+                "max_tokens": self.max_token,
+                "stop": self.stop,
+                "seed": self.seed,
+                "drop_params": True,
+                "stream": False,
+                "timeout": 10,
+                "num_retries": self.num_retries,
+            }
+
+            if self.use_caching:
+                completion_kwargs["caching"] = True
+            else:
+                completion_kwargs["caching"] = False
+
+            if self.simulate_response:
+                completion_kwargs["mock_response"] = self.simulate_response_text
+
+            if self.platform == "Others (Custom)":
+                completion_kwargs["base_url"] = self.endpoint
+                if self.use_api_key:
+                    completion_kwargs["api_key"] = self.api_keys
+            
+            self.provider.io.info(f"Sending batch request...")
+            responses = batch_completion(**completion_kwargs)
+            self.provider.io.info(f"Batch response received.")
+
+            outputs = []
+            prompt_tokens_list = []
+            completion_tokens_list = []
+            costs = []
+
+            for response in responses:
+                output_content = response['choices'][0]['message']['content']
+                prompt_tokens = response['usage']['prompt_tokens']
+                completion_tokens = response['usage']['completion_tokens']
+                
+                if not self.simulate_response:
+                    try:    
+                        cost = completion_cost(completion_response=response)
+                        self.total_cost += cost
+                    except Exception as e:
+                        self.provider.io.warn(f"Model {self.model} does not support cost calculation.")
+                        cost = 0 # Set cost to 0 if model does not support cost calculation
+                else:
+                    cost = 0  # Set cost to 0 for simulated responses
+
+                outputs.append(output_content)
+                prompt_tokens_list.append(prompt_tokens)
+                completion_tokens_list.append(completion_tokens)
+                costs.append(cost)
+
+            return outputs, prompt_tokens_list, completion_tokens_list, costs
+
+        except Exception as e:
+            self.provider.io.error(f"Error in batch completion: {str(e)}")
+            return ([None] * len(input_dataframe), 
+                   [None] * len(input_dataframe),
+                   [None] * len(input_dataframe),
+                   [None] * len(input_dataframe))
+
     def on_record_batch(self, batch: "pa.Table", anchor: Anchor) -> None:
         """
         Process the passed record batch.
@@ -150,181 +306,19 @@ class LLMConnect(PluginV2):
         # log the input dataframe size
         self.provider.io.info(f"Input DataFrame size: {input_dataframe.shape}")
 
-        outputs = []
-        prompt_tokens_list = []
-        completion_tokens_list = []
-        costs = []
-
         if self.batch_processing:
             # Batch processing
-            batch_messages = []
-            for _, row in input_dataframe.iterrows():
-                if self.use_system_prompt:
-                    messages = [
-                        {"role": "system", "content": self.system_prompt},
-                        {"role": "user", "content": row[self.prompt_field]}
-                    ]
-                else:
-                    messages = [
-                        {"role": "user", "content": row[self.prompt_field]}
-                    ]
-                batch_messages.append(trim_messages(messages, self.model))
-            
-            # self.provider.io.info(f"Batch Requesting messages: {json.dumps(batch_messages, indent=2)}")
-            try:
-                completion_kwargs = {
-                    "model": self.model,
-                    "messages": batch_messages,
-                    "temperature": self.temperature,
-                    "top_p": self.top_p,
-                    "max_tokens": self.max_token,
-                    "stop": self.stop,
-                    "seed": self.seed,
-                    "drop_params": True,
-                    "stream": False,
-                    "timeout": 10,
-                    "num_retries": self.num_retries,
-                    #"response_format": "json_object" if self.enforceJsonResponse=="1" else None                    
-                }
-
-                if self.use_caching:
-                    completion_kwargs["caching"] = True
-                else:
-                    completion_kwargs["caching"] = False
-
-                if self.simulate_response:
-                    completion_kwargs["mock_response"] = self.simulate_response_text
-
-                if self.platform == "Others (Custom)":
-                    completion_kwargs["base_url"] = self.endpoint
-                    if self.use_api_key:
-                        completion_kwargs["api_key"] = self.api_keys
-                
-                # if self.enforceJsonResponse:
-                #     completion_kwargs["response_format"] = "json_object"
-                # else:
-                #     completion_kwargs["response_format"] = None
-                
-                self.provider.io.info(f"Sending batch request...")
-                responses = batch_completion(**completion_kwargs)
-                self.provider.io.info(f"Batch response received.")
-
-                for response in responses:
-                    output_content = response['choices'][0]['message']['content']
-                    prompt_tokens = response['usage']['prompt_tokens']
-                    completion_tokens = response['usage']['completion_tokens']
-                    
-                    if not self.simulate_response:
-                        try:	
-                            cost = completion_cost(completion_response=response)
-                            self.total_cost += cost
-                        except Exception as e:
-                            self.provider.io.warn(f"Model {self.model} does not support cost calculation.")
-                            cost = 0 # Set cost to 0 if model does not support cost calculation
-                    else:
-                        cost = 0  # Set cost to 0 for simulated responses
-
-                    outputs.append(output_content)
-                    prompt_tokens_list.append(prompt_tokens)
-                    completion_tokens_list.append(completion_tokens)
-                    costs.append(cost)
-
-            except Exception as e:
-                self.provider.io.error(f"Error in batch completion: {str(e)}")
-                outputs = [None] * len(input_dataframe)
-                prompt_tokens_list = [None] * len(input_dataframe)
-                completion_tokens_list = [None] * len(input_dataframe)
-                costs = [None] * len(input_dataframe)
+            outputs, prompt_tokens_list, completion_tokens_list, costs = self.process_batch(input_dataframe)
             
             # Add results to the dataframe
             input_dataframe['output'] = outputs
             input_dataframe['prompt_tokens'] = prompt_tokens_list
             input_dataframe['completion_tokens'] = completion_tokens_list
             input_dataframe['cost($)'] = costs
-
         else:
             # Single processing using pandas transform
-            def process_row(row):
-                if self.use_system_prompt:
-                    messages = [
-                        {"role": "system", "content": self.system_prompt},
-                        {"role": "user", "content": row}
-                    ]
-                else:
-                    messages = [{"role": "user", "content": row}]
-                messages = trim_messages(messages, self.model)
-
-                try:
-                    self.provider.io.info(f"Requesting messages: {json.dumps(messages, indent=2)}")
-                    completion_kwargs = {
-                        "model": self.model,
-                        "messages": messages,
-                        "temperature": self.temperature,
-                        "top_p": self.top_p,
-                        "max_tokens": self.max_token,
-                        "stop": self.stop,
-                        "seed": self.seed,
-                        "timeout": 10,
-                        "stream": False,
-                        "drop_params": True,
-                        "num_retries": self.num_retries,
-                        "logger_fn": self.my_custom_logging_fn,
-                    }
-
-                    if self.use_caching:
-                        completion_kwargs["caching"] = True
-                    else:
-                        completion_kwargs["caching"] = False
-
-                    if self.simulate_response:
-                        completion_kwargs["mock_response"] = self.simulate_response_text
-
-                    # if self.enforceJsonResponse:
-                    #     completion_kwargs["response_format"] = "json_object"
-                    # else:
-                    #     completion_kwargs["response_format"] = None
-
-                    if self.platform == "Others (Custom)":
-                        completion_kwargs["base_url"] = self.endpoint
-                        if self.use_api_key:
-                            completion_kwargs["api_key"] = self.api_keys
-                    
-                    self.provider.io.info(f"Sending request...")
-                    response = completion(**completion_kwargs)
-                    self.provider.io.info(f"Response received.")
-
-                    output_content = response['choices'][0]['message']['content']
-                    prompt_tokens = response['usage']['prompt_tokens']
-                    completion_tokens = response['usage']['completion_tokens']
-                    
-                    if not self.simulate_response and not self.platform == "Others (Custom)":
-                        try:
-                            cost = completion_cost(completion_response=response)
-                            self.total_cost += cost
-                        except Exception as e:
-                            self.provider.io.warn(f"Model {self.model} does not support cost calculation.")
-                            cost = 0 # Set cost to 0 if model does not support cost calculation
-                    else:
-                        cost = 0 # Set cost to 0 for simulated responses
-
-                    return pd.Series({
-                        'output': output_content,
-                        'prompt_tokens': prompt_tokens,
-                        'completion_tokens': completion_tokens,
-                        'cost($)': cost
-                    })
-
-                except Exception as e:
-                    self.provider.io.error(f"Error in litellm completion: {str(e)}")
-                    return pd.Series({
-                        'output': None,
-                        'prompt_tokens': None,
-                        'completion_tokens': None,
-                        'cost($)': None
-                    })
-
-            # Apply the transform function to the prompt field
-            result = input_dataframe[self.prompt_field].transform(process_row)
+            # Replace the inline function with a call to the class method
+            result = input_dataframe[self.prompt_field].transform(self.process_row)
             
             # Add results to the dataframe
             input_dataframe['output'] = result['output']
