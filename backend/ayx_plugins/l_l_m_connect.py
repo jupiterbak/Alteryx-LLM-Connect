@@ -27,9 +27,11 @@ from litellm import Cache, batch_completion, completion, completion_cost, comple
 from litellm.utils import trim_messages
 from openai import OpenAIError
 from pandas.core.dtypes.common import is_string_dtype
+from llama_cpp import Llama
 import litellm
 
-DEFAULT_NUM_RETRIES = 5
+DEFAULT_NUM_RETRIES = 100
+DEFAULT_INPUT_CONTEXT_LENGTH = 4096
 os.environ["LITELLM_LOCAL_MODEL_COST_MAP"] = "True"
 os.environ["LITELLM_MODE"] = "PRODUCTION"
 
@@ -41,6 +43,9 @@ class LLMConnect(PluginV2):
         self.name = "LLMConnect"
         self.provider = provider
         self.provider.io.info(f"{self.name} tool started")
+        # Initialize input_dataframe as empty list to store batches
+        self.dataframe_batches = []
+        
         # Read all configuration values
         self.platform = self.provider.tool_config.get("platform")
         self.endpoint = self.provider.tool_config.get("endpoint")
@@ -63,6 +68,10 @@ class LLMConnect(PluginV2):
         self.batch_processing = self.provider.tool_config.get("batchProcessing") == "1" if self.provider.tool_config.get("batchProcessing") else False
         self.max_budget = float(self.provider.tool_config.get("maxBudget")) if self.provider.tool_config.get("maxBudget") else 1.001
         self.enforceJsonResponse = self.provider.tool_config.get("enforceJsonResponse") =="1"
+        self.gpu_offload = self.provider.tool_config.get("gpuOffload") == "1" if self.provider.tool_config.get("gpuOffload") else False
+        self.n_gpu_layers = int(self.provider.tool_config.get("nGpuLayers")) if self.provider.tool_config.get("nGpuLayers") else 10
+        self.gpu_memory = int(self.provider.tool_config.get("gpuMemory")) if self.provider.tool_config.get("gpuMemory") else 10
+        self.input_context_length = int(self.provider.tool_config.get("inputContextLength")) if self.provider.tool_config.get("inputContextLength") else DEFAULT_INPUT_CONTEXT_LENGTH
 
         # log tool config
         self.provider.io.info(f"Tool Config: {json.dumps(self.provider.tool_config, indent=2)}")
@@ -86,7 +95,15 @@ class LLMConnect(PluginV2):
             litellm.enable_cache()
         else:
             self.provider.io.info(f"Not using caching")
-            litellm.disable_cache()        
+            litellm.disable_cache() 
+        
+        # Add logic to handle local inference
+        if self.platform == "**Local Inference**":
+            self.provider.io.info(f"Using local inference")
+            self.llama = Llama(model_path=self.model)
+        else:
+            self.llama = None
+            self.provider.io.info(f"Using remote inference")
 
     def create_new_log_file(self):
         if self.log_file:
@@ -119,6 +136,60 @@ class LLMConnect(PluginV2):
         self.log_file.write(f"model call log details: {model_call_dict}\n")
         self.log_file.flush()  # Ensure the data is written to the file
 
+    def process_row_locally(self, row):
+        """Process a single row of data through the LLM. instantiated locally using llama.cpp"""
+        if self.use_system_prompt:
+            messages = [
+                {"role": "system", "content": self.system_prompt},
+                {"role": "user", "content": row}
+            ]
+        else:
+            messages = [{"role": "user", "content": row}]
+        
+
+        try:
+            self.provider.io.info(f"Requesting messages: {json.dumps(messages, indent=2)}")
+            completion_kwargs = {
+                "messages": messages,
+                "temperature": self.temperature,
+                "top_p": self.top_p,
+                "max_tokens": self.max_token,
+                "stop": self.stop,
+                "seed": self.seed,
+                "stream": False
+            }
+            
+            if self.enforceJsonResponse:
+                completion_kwargs["response_format"] = {"type": "json_object"}
+
+            if self.simulate_response:
+                output_content = self.simulate_response_text
+                prompt_tokens = 0
+                completion_tokens = 0
+            else:
+                response = self.llama.create_chat_completion_openai_v1(**completion_kwargs)
+                self.provider.io.info(f"Response received.")
+                output_content = response.choices[0].message.content
+                prompt_tokens = response.usage.prompt_tokens
+                completion_tokens = response.usage.completion_tokens
+
+            # No cost for local inference
+            cost = 0 # Set cost to 0 for simulated responses
+
+            return pd.Series({
+                'output': output_content,
+                'prompt_tokens': prompt_tokens,
+                'completion_tokens': completion_tokens,
+                'cost($)': cost
+            })
+        
+        except Exception as e:
+            self.provider.io.error(f"Error in completion: {str(e)}")
+            return pd.Series({
+                'output': None,
+            })
+
+
     def process_row(self, row):
         """Process a single row of data through the LLM."""
         if self.use_system_prompt:
@@ -143,7 +214,7 @@ class LLMConnect(PluginV2):
                 "timeout": 10,
                 "stream": False,
                 "drop_params": False,
-                "num_retries": self.num_retries,
+                "num_retries": 100, #self.num_retries,
                 "logger_fn": self.my_custom_logging_fn,
             }
 
@@ -160,13 +231,13 @@ class LLMConnect(PluginV2):
                 if self.use_api_key:
                     completion_kwargs["api_key"] = self.api_keys
             
-            self.provider.io.info(f"Sending request...")
+            # self.provider.io.info(f"Sending request...")
             response = completion(**completion_kwargs)
-            self.provider.io.info(f"Response received.")
+            # self.provider.io.info(f"Response received.")
 
-            output_content = response['choices'][0]['message']['content']
-            prompt_tokens = response['usage']['prompt_tokens']
-            completion_tokens = response['usage']['completion_tokens']
+            output_content = response.choices[0].message.content
+            prompt_tokens = response.usage.prompt_tokens
+            completion_tokens = response.usage.completion_tokens
             
             if not self.simulate_response and not self.platform == "Others (Custom)":
                 try:
@@ -186,7 +257,7 @@ class LLMConnect(PluginV2):
             })
 
         except Exception as e:
-            self.provider.io.error(f"Error in litellm completion: {str(e)}")
+            self.provider.io.error(f"Error in completion: {str(e)}")
             return pd.Series({
                 'output': None,
                 'prompt_tokens': None,
@@ -221,7 +292,7 @@ class LLMConnect(PluginV2):
                 "drop_params": True,
                 "stream": False,
                 "timeout": 10,
-                "num_retries": self.num_retries,
+                "num_retries": 100, #self.num_retries,
             }
 
             if self.use_caching:
@@ -247,9 +318,9 @@ class LLMConnect(PluginV2):
             costs = []
 
             for response in responses:
-                output_content = response['choices'][0]['message']['content']
-                prompt_tokens = response['usage']['prompt_tokens']
-                completion_tokens = response['usage']['completion_tokens']
+                output_content = response.choices[0].message.content
+                prompt_tokens = response.usage.prompt_tokens
+                completion_tokens = response.usage.completion_tokens
                 
                 if not self.simulate_response:
                     try:    
@@ -298,37 +369,44 @@ class LLMConnect(PluginV2):
             raise RuntimeError(
                 f"Incoming data must contain a column with the prompt field: '{self.prompt_field}'"
             )
-        # input_dataframe = pd.DataFrame(batch.to_pandas(split_blocks=True))
-        input_dataframe = batch.to_pandas(split_blocks=False)
-        if not is_string_dtype(input_dataframe[self.prompt_field]):
+        
+        current_batch = batch.to_pandas(split_blocks=False)
+        if not is_string_dtype(current_batch[self.prompt_field]):
             raise RuntimeError(f"'{self.prompt_field}' column must be of 'string' data type")
         
-        # log the input dataframe size
-        self.provider.io.info(f"Input DataFrame size: {input_dataframe.shape}")
-
+        # Process the current batch
         if self.batch_processing:
             # Batch processing
-            outputs, prompt_tokens_list, completion_tokens_list, costs = self.process_batch(input_dataframe)
+            outputs, prompt_tokens_list, completion_tokens_list, costs = self.process_batch(current_batch)
             
-            # Add results to the dataframe
-            input_dataframe['output'] = outputs
-            input_dataframe['prompt_tokens'] = prompt_tokens_list
-            input_dataframe['completion_tokens'] = completion_tokens_list
-            input_dataframe['cost($)'] = costs
+            # Add results to the current batch
+            current_batch['output'] = outputs
+            current_batch['prompt_tokens'] = prompt_tokens_list
+            current_batch['completion_tokens'] = completion_tokens_list
+            current_batch['cost($)'] = costs
+        # if local inference 
+        elif self.platform == "**Local Inference**":
+            result = current_batch[self.prompt_field].transform(self.process_row_locally)
+            
+            # Add results to the current batch
+            current_batch['output'] = result['output']
+            current_batch['prompt_tokens'] = result['prompt_tokens']
+            current_batch['completion_tokens'] = result['completion_tokens']
+            current_batch['cost($)'] = result['cost($)']
         else:
             # Single processing using pandas transform
-            # Replace the inline function with a call to the class method
-            result = input_dataframe[self.prompt_field].transform(self.process_row)
+            result = current_batch[self.prompt_field].transform(self.process_row)
             
-            # Add results to the dataframe
-            input_dataframe['output'] = result['output']
-            input_dataframe['prompt_tokens'] = result['prompt_tokens']
-            input_dataframe['completion_tokens'] = result['completion_tokens']
-            input_dataframe['cost($)'] = result['cost($)']
+            # Add results to the current batch
+            current_batch['output'] = result['output']
+            current_batch['prompt_tokens'] = result['prompt_tokens']
+            current_batch['completion_tokens'] = result['completion_tokens']
+            current_batch['cost($)'] = result['cost($)']
+        
+        # Write the current batch to the output anchor
+        self.provider.io.info(f"Writing final batch to output anchor.")
+        self.provider.write_to_anchor("Output", pa.Table.from_pandas(current_batch))
 
-        # Write the updated dataframe to the output anchor
-        self.provider.io.info(f"Writing to output anchor.")
-        self.provider.write_to_anchor("Output", pa.Table.from_pandas(input_dataframe))
 
     def on_incoming_connection_complete(self, anchor: Anchor) -> None:
         """
@@ -341,27 +419,10 @@ class LLMConnect(PluginV2):
         anchor
             NamedTuple containing anchor.name and anchor.connection.
         """
-        self.provider.io.info(
-            f"Received complete update from {anchor.name}:{anchor.connection}."
-        )
+        self.provider.io.info(f"Incoming connection complete for anchor: {anchor.name}")
 
     def on_complete(self) -> None:
-        """
-        Clean up any plugin resources, or push records for an input tool.
-
-        This method gets called when all other plugin processing is complete.
-
-        In this method, a Plugin designer should perform any cleanup for their plugin.
-        However, if the plugin is an input-type tool (it has no incoming connections),
-        processing (record generation) should occur here.
-
-        Note: A tool with an optional input anchor and no incoming connections should
-        also write any records to output anchors here.
-        """
-
-        # Initialize the output dataframe
-        self.provider.io.info(f"{self.name} tool done.")
-        self.provider.io.info(f"Total cost: ${self.total_cost:.4f}")
+        """Clean up any plugin resources."""
 
         # Write final information and close the log file
         end_time = datetime.now()

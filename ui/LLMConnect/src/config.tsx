@@ -292,7 +292,6 @@ export const config: { supported_platforms: Platform[] } = {
         "replicate/a16z-infra/llama-2-13b-chat:2a7f981751ec7fdf87b5b91ad4db53683a98082e9ff7bfd12c8cd5ea85980a52",
         "replicate/vicuna-13b:6282abe6a492de4145d7bb601023762212f9ddbbe78278bd6771c8b3b2f2a13b",
         "replicate/daanelson/flan-t5-large:ce962b3f6792a57074a601d3979db5839697add2e4e02696b3ced4c022d4767f",
-        "replicate/custom-llm-version-id",
         "replicate/deployments/ishaan-jaff/ishaan-mistral"
       ],
       api_url: "POST https://api.replicate.com/v1/deployments/{deployment_owner}/{deployment_name}/predictions",
@@ -665,6 +664,13 @@ export const config: { supported_platforms: Platform[] } = {
     // Others
     {
       name: "Others (Custom)",
+      models: [],
+      api_url: "",
+      doc_url: ""
+    },
+    // Local Inference
+    {
+      name: "**Local Inference**",
       models: [],
       api_url: "",
       doc_url: ""

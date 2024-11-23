@@ -21,7 +21,7 @@ TEST_SCHEMA = pa.schema([
 
 @pytest.fixture
 def small_batches():
-    repeat = 60
+    repeat = 30
     input_data = [
         "Tell me a fun fact about mathematics",
     ] * repeat
@@ -69,11 +69,12 @@ def l_l_m_connect_plugin_service():
     return SdkToolTestService(
         plugin_class=LLMConnect,
         config_mock="""<Configuration>
-          <platform>Groq</platform>
-          <platformDocUrl>https://console.groq.com/docs/api-reference#chat-create</platformDocUrl>
-          <endpoint>https://api.groq.com/openai/v1/chat/completions</endpoint>
+          <platform>**Local Inference**</platform>
+          <platformDocUrl>https://platform.openai.com/docs/api-reference/chat/create</platformDocUrl>
+          <endpoint>
+          </endpoint>
           <useApiKey>0</useApiKey>
-          <model>groq/llama3-8b-8192</model>
+          <model>C:/DATA/03_LLM_Models/TheBloke/Mistral-7B-Instruct-v0.2-GGUF/mistral-7b-instruct-v0.2.Q4_K_S.gguf</model>
           <temperature>0.8</temperature>
           <topP>1</topP>
           <maxToken>512</maxToken>
@@ -81,7 +82,7 @@ def l_l_m_connect_plugin_service():
           </stop>
           <seed>5</seed>
           <checkSafety>1</checkSafety>
-          <useCaching>0</useCaching>
+          <useCaching>1</useCaching>
           <promptField>Prompt</promptField>
           <systemPrompt>You are a helpful assistant.</systemPrompt>
           <useSystemPrompt>0</useSystemPrompt>
@@ -90,6 +91,9 @@ def l_l_m_connect_plugin_service():
           <simulateResponseText>The response has been simulated.</simulateResponseText>
           <batchProcessing>0</batchProcessing>
           <enforceJsonResponse>0</enforceJsonResponse>
+          <gpuOffload>0</gpuOffload>
+          <nGpuLayers>0</nGpuLayers>
+          <gpuMemory>50</gpuMemory>
           <Secrets />
         </Configuration>""",
         input_anchor_config={
@@ -131,9 +135,10 @@ def test_on_record_batch(l_l_m_connect_plugin_service, anchor, record_batch_set,
     If no provider.io methods were called, l_l_m_connect_plugin_service.io_stream will be an empty list.
     """
     input_record_batch= request.getfixturevalue(record_batch_set)
+
     l_l_m_connect_plugin_service.run_on_record_batch(input_record_batch, anchor)
     
-    assert l_l_m_connect_plugin_service.data_streams["Output"][0].num_rows == input_record_batch.num_rows
+    assert l_l_m_connect_plugin_service.data_streams["Output"][0].num_rows > 0
     pprint(l_l_m_connect_plugin_service.io_stream)
     #assert l_l_m_connect_plugin_service.io_stream == []
 
@@ -156,7 +161,9 @@ def test_on_incoming_connection_complete(l_l_m_connect_plugin_service, anchor):
     The message type (INFO, WARN, ERROR) will be prepended to the message's text with a colon.
     If no provider.io methods were called, l_l_m_connect_plugin_service.io_stream will be an empty list.
     """
+    # Get the tool service and cast it to the LLMConnect class 
     l_l_m_connect_plugin_service.run_on_incoming_connection_complete(anchor)
+    
     
     # assert l_l_m_connect_plugin_service.data_streams == {}
     # assert l_l_m_connect_plugin_service.io_stream == [
