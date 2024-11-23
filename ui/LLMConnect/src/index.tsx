@@ -1,6 +1,6 @@
 import React, { useContext, useEffect, useState } from 'react';
 import ReactDOM from 'react-dom';
-import { AyxAppWrapper, Box, Tabs, Tab, Typography, makeStyles, Theme, Grid, NativeSelect, TextField, Checkbox, FormControlLabel, FormGroup, Button, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper, IconButton } from '@alteryx/ui';
+import { AyxAppWrapper, Box, Tabs, Tab, Typography, makeStyles, Theme, Grid, NativeSelect, TextField, Checkbox, FormControlLabel, FormGroup, Button, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper, IconButton, Slider } from '@alteryx/ui';
 import { Alteryx, Delete as DeleteIcon, Plus as AddIcon, Server as BatchIcon, Save as SaveIcon, Download as ImportIcon } from '@alteryx/icons';
 import { Context as UiSdkContext, DesignerApi, JsEvent } from '@alteryx/react-comms';
 import { IntlProvider, FormattedMessage } from 'react-intl';
@@ -27,6 +27,10 @@ const DEFAULT_SIMULATE_RESPONSE_TEXT = "The response has been simulated."
 const DEFAULT_BATCH_PROCESSING = "0"
 const DEFAULT_MAX_BUDGET = 1.00
 const DEFAULT_ENFORCE_JSON_RESPONSE = "0"
+const DEFAULT_GPU_OFFLOAD = "0"
+const DEFAULT_N_GPU_LAYERS = 0
+const DEFAULT_GPU_MEMORY = 50
+const DEFAULT_INPUT_CONTEXT_LENGTH = 4096
 
 
 // Extract supported platforms, models, and API URLs
@@ -102,6 +106,15 @@ const useStyles = makeStyles((theme: Theme) => ({
     fontSize: '0.75rem',
     textTransform: 'none',
   },
+  sliderLabel: {
+    marginBottom: theme.spacing(1),
+  },
+  gpuSettingsGroup: {
+    border: `1px solid ${theme.palette.divider}`,
+    borderRadius: theme.shape.borderRadius,
+    padding: theme.spacing(2),
+    marginTop: theme.spacing(1),
+  },
 }));
 
 const App = () => {
@@ -170,7 +183,13 @@ const App = () => {
         platform: selectedPlatform,
         endpoint: platformConfig[selectedPlatform]?.apiUrl || '',
         model: (platformConfig[selectedPlatform]?.models || [])[0] || '',
-        platformDocUrl: selectedPlatformConfig?.doc_url || DEFAULT_PLATFORM_DOC_URL
+        platformDocUrl: selectedPlatformConfig?.doc_url || DEFAULT_PLATFORM_DOC_URL,
+        // Reset GPU settings if not Local Inference
+        ...(selectedPlatform !== "**Local Inference**" && {
+          gpuOffload: DEFAULT_GPU_OFFLOAD,
+          nGpuLayers: DEFAULT_N_GPU_LAYERS,
+          gpuMemory: DEFAULT_GPU_MEMORY
+        })
       }
     });
 
@@ -410,6 +429,46 @@ const App = () => {
     });
   };
 
+  const handleGpuOffloadChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    handleUpdateModel({
+      ...model,
+      Configuration: {
+        ...model.Configuration,
+        gpuOffload: event.target.checked ? "1" : "0"
+      }
+    });
+  };
+
+  const handleInputContextLengthChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    handleUpdateModel({
+      ...model,
+      Configuration: {
+        ...model.Configuration,
+        inputContextLength: Number(event.target.value)
+      }
+    });
+  };
+
+  const handleNGpuLayersChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    handleUpdateModel({
+      ...model,
+      Configuration: {
+        ...model.Configuration,
+        nGpuLayers: Number(event.target.value)
+      }
+    });
+  };
+
+  const handleGpuMemoryChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    handleUpdateModel({
+      ...model,
+      Configuration: {
+        ...model.Configuration,
+        gpuMemory: Number(event.target.value)
+      }
+    });
+  };
+
   const saveConfiguration = () => {
     const config = JSON.stringify(model.Configuration, null, 2);
     const blob = new Blob([config], { type: 'application/json' });
@@ -570,9 +629,6 @@ const App = () => {
                 className={classes.textField}
                 inputProps={{ placeholder: 'Select a platform' }}
               >
-                {/* <option value="" key="">
-                  <FormattedMessage id="platform.selectOption" defaultMessage="Select a platform" />
-                </option> */}
                 {platformOptions.map((option) => (
                   <option key={option} value={option}>
                     {option}
@@ -585,24 +641,28 @@ const App = () => {
                 </Typography>
               )}
             </Grid>
+            
+            {model.Configuration.platform !== "**Local Inference**" && (
+              <Grid item xs={12}>
+                <TextField
+                  label={<FormattedMessage id="platform.url" defaultMessage="URL" />}
+                  value={model.Configuration.endpoint || ''}
+                  onChange={handleEndpointChange}
+                  fullWidth
+                  className={`${classes.textField} ${classes.textFieldLabel}`}
+                />
+              </Grid>
+            )}
+
             <Grid item xs={12}>
-              <TextField
-                label={<FormattedMessage id="platform.url" defaultMessage="URL" />}
-                value={model.Configuration.endpoint || ''}
-                onChange={handleEndpointChange}
-                fullWidth
-                className={`${classes.textField} ${classes.textFieldLabel}`}
-              />
-            </Grid>
-            <Grid item xs={12}>
-              {model.Configuration.platform !== "Others (Custom)" && (
+              {model.Configuration.platform !== "Others (Custom)" && model.Configuration.platform !== "**Local Inference**" && (
                 <Typography variant="subtitle1">
                   <FormattedMessage id="platform.selectModel" defaultMessage="Select Model" />
                 </Typography>
               )}
-              {model.Configuration.platform === "Others (Custom)" ? (
+              {model.Configuration.platform === "Others (Custom)" || model.Configuration.platform === "**Local Inference**" ? (
                 <TextField
-                  label={<FormattedMessage id="platform.modelName" defaultMessage="Model Name" />}
+                  label={<FormattedMessage id="platform.modelName" defaultMessage="Model Name / Model Path" />}
                   value={model.Configuration.model || ''}
                   onChange={(event) => handleModelChange({ target: { value: event.target.value } })}
                   fullWidth
@@ -616,9 +676,6 @@ const App = () => {
                   className={classes.textField}
                   inputProps={{ placeholder: 'Select a model' }}
                 >
-                  {/* <option value="" key="">
-                    <FormattedMessage id="platform.selectModelOption" defaultMessage="Select a model" />
-                  </option> */}
                   {model.Configuration.platform && platformConfig[model.Configuration.platform].models.map((modelOption) => (
                     <option key={modelOption} value={modelOption}>
                       {modelOption}
@@ -633,89 +690,115 @@ const App = () => {
               )}
             </Grid>
             
-            <Grid item xs={12}>
-              <FormControlLabel
-                control={
-                  <Checkbox
-                    checked={model.Configuration.useApiKey === "1"}
-                    onChange={handleUseApiKeyChange}
-                    color="primary"
-                    disabled
+            {model.Configuration.platform !== "**Local Inference**" && (
+              <>
+                <Grid item xs={12}>
+                  <FormControlLabel
+                    control={
+                      <Checkbox
+                        checked={model.Configuration.useApiKey === "1"}
+                        onChange={handleUseApiKeyChange}
+                        color="primary"
+                        disabled
+                      />
+                    }
+                    label={<FormattedMessage id="platform.useApiKey" defaultMessage="Use API Key" />}
                   />
-                }
-                label={<FormattedMessage id="platform.useApiKey" defaultMessage="Use API Key" />}
-              />
-            </Grid>
-            {model.Configuration.useApiKey === "1" && (
+                </Grid>
+                
+                <Grid item xs={12}>
+                  <Typography variant="body2" color="textSecondary">
+                    <FormattedMessage
+                      id="apiKeyInstructions"
+                      defaultMessage="For security reasons, please define your API Keys as environment variables. Follow {docLink} for more information."
+                      values={{
+                        docLink: (
+                          <a href={model.Configuration.platformDocUrl || '#'} target="_blank" rel="noopener noreferrer">
+                            <FormattedMessage
+                              id="apiKeyInstructions.docLink"
+                              defaultMessage="this link"
+                            />
+                          </a>
+                        ),
+                      }}
+                    />
+                  </Typography>
+                </Grid>
+              </>
+            )}
+            {model.Configuration.platform === "**Local Inference**" && (
               <Grid item xs={12}>
-                <TableContainer component={Paper} className={classes.tableContainer}>
-                  <Table>
-                    <TableHead>
-                      <TableRow>
-                        <TableCell><FormattedMessage id="platform.apiKeyName" defaultMessage="API Key Name" /></TableCell>
-                        <TableCell><FormattedMessage id="platform.apiKeyValue" defaultMessage="API Key Value" /></TableCell>
-                        <TableCell></TableCell>
-                      </TableRow>
-                    </TableHead>
-                    <TableBody>
-                      {(model.Configuration.apiKeys || []).map((apiKey, index) => (
-                        <TableRow key={index}>
-                          <TableCell>
-                            <TextField
-                              value={apiKey.key}
-                              onChange={handleAPIKeyChange(index, 'key')}
-                              fullWidth
-                              disabled
-                            />
-                          </TableCell>
-                          <TableCell>
-                            <TextField
-                              value={apiKey.value}
-                              onChange={handleAPIKeyChange(index, 'value')}
-                              fullWidth
-                              type="password"
-                              disabled
-                            />
-                          </TableCell>
-                          <TableCell>
-                            <IconButton onClick={() => removeApiKey(index)} size="small" disabled>
-                              <DeleteIcon />
-                            </IconButton>
-                          </TableCell>
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </TableContainer>
-                <Button
-                  startIcon={<AddIcon />}
-                  onClick={addApiKey}
-                  color="primary"
-                  className={classes.addButton}
-                  disabled
-                >
-                  <FormattedMessage id="platform.addApiKey" defaultMessage="Add API Key" />
-                </Button>
+                <Box className={classes.gpuSettingsGroup}>
+                  <FormGroup>
+                    <FormControlLabel
+                      control={
+                        <Checkbox
+                          checked={model.Configuration.gpuOffload === "1"}
+                          onChange={handleGpuOffloadChange}
+                          color="primary"
+                        />
+                      }
+                      label={<FormattedMessage id="platform.gpuOffload" defaultMessage="GPU Offload" />}
+                    />
+                  </FormGroup>
+                  {/* <Typography variant="subtitle1" className={classes.italicText}>
+                    <FormattedMessage id="platform.gpuSettings" defaultMessage="GPU Settings" />
+                  </Typography> */}
+                  {model.Configuration.gpuOffload === "1" && (
+                    <>
+                      <Grid container spacing={2}>
+                        <Grid item xs={12}>
+                          <TextField
+                            label={<FormattedMessage id="platform.nGpuLayers" defaultMessage="Number of GPU Layers" />}
+                            type="number"
+                            value={model.Configuration.nGpuLayers ?? DEFAULT_N_GPU_LAYERS}
+                            onChange={handleNGpuLayersChange}
+                            fullWidth
+                            className={`${classes.textField} ${classes.textFieldLabel}`}
+                            inputProps={{ step: 1, min: 0 }}
+                            disabled={true}
+                          />
+                        </Grid>
+                        <Grid item xs={12}>
+                          <TextField
+                            label={<FormattedMessage id="platform.inputContextLength" defaultMessage="Customized Input Context Length" />}
+                            type="number"
+                            value={model.Configuration.inputContextLength ?? DEFAULT_INPUT_CONTEXT_LENGTH}
+                            onChange={handleInputContextLengthChange}
+                            fullWidth
+                            className={`${classes.textField} ${classes.textFieldLabel}`}
+                            inputProps={{ step: 1, min: 0 }}
+                            disabled={true}
+                          />
+                        </Grid>
+                        <Grid item xs={12}>
+                          <Typography id="gpu-memory-slider" className={classes.sliderLabel}>
+                            <FormattedMessage id="platform.gpuMemory" defaultMessage="GPU Memory (%)" />
+                          </Typography>
+                          <Slider
+                            value={model.Configuration.gpuMemory ?? DEFAULT_GPU_MEMORY}
+                            disabled={true}
+                            onChange={(_, value) => {
+                              handleUpdateModel({
+                                ...model,
+                                Configuration: {
+                                  ...model.Configuration,
+                                  gpuMemory: value as number
+                                }
+                              });
+                            }}
+                            min={0}
+                            max={100}
+                            valueLabelDisplay="auto"
+                            aria-labelledby="gpu-memory-slider"
+                          />
+                        </Grid>
+                      </Grid>
+                    </>
+                  )}
+                </Box>
               </Grid>
             )}
-            <Grid item xs={12}>
-              <Typography variant="body2" color="textSecondary">
-                <FormattedMessage
-                  id="apiKeyInstructions"
-                  defaultMessage="For security reasons, please define your API Keys as environment variables. Follow {docLink} for more information."
-                  values={{
-                    docLink: (
-                      <a href={model.Configuration.platformDocUrl || '#'} target="_blank" rel="noopener noreferrer">
-                        <FormattedMessage
-                          id="apiKeyInstructions.docLink"
-                          defaultMessage="this link"
-                        />
-                      </a>
-                    ),
-                  }}
-                />
-              </Typography>
-            </Grid>
           </Grid>
         )}
         {activeTab === 2 && (
@@ -918,6 +1001,9 @@ const Tool = () => {
       simulateResponseText: DEFAULT_SIMULATE_RESPONSE_TEXT,
       batchProcessing: DEFAULT_BATCH_PROCESSING,
       enforceJsonResponse: DEFAULT_ENFORCE_JSON_RESPONSE,
+      gpuOffload: DEFAULT_GPU_OFFLOAD,
+      nGpuLayers: DEFAULT_N_GPU_LAYERS,
+      gpuMemory: DEFAULT_GPU_MEMORY,
     }
   };
 
@@ -947,7 +1033,7 @@ const Tool = () => {
       "platform.apiKeyValue": "API Key Value",
       "platform.addApiKey": "Add API Key",
       "platform.removeApiKey": "Remove",
-      "platform.modelName": "Model Name",
+      "platform.modelName": "Model Name / Model Path",
       "inferenceSettings.temperature": "Temperature",
       "inferenceSettings.topP": "Top P",
       "inferenceSettings.maxToken": "Max Token",
@@ -967,12 +1053,16 @@ const Tool = () => {
       "inferenceSettings.jsonModeNote": "Important: When using JSON mode, you must also instruct the model to produce JSON yourself via a system or user message. Without this, the model may generate an unending stream of whitespace until the generation reaches the token limit, resulting in a long-running and seemingly 'stuck' request. Also note that the message content may be partially cut off if finish_reason='length', which indicates the generation exceeded max_tokens or the conversation exceeded the max context length.",
       "saveConfig": "Save",
       "importConfig": "Import",
+      "platform.gpuOffload": "GPU Offload",
+      "platform.nGpuLayers": "Number of GPU Layers",
+      "platform.gpuMemory": "GPU Memory",
+      "platform.inputContextLength": "Input Context Length",
     },
     es: {
       "title": "Conexión LLM",
       "instructions": "Configure los ajustes de conexión LLM y el prompt a continuación. {note}",
       "instructions.note": "\nNota: Los modelos de visión no son compatibles.",
-      "tab.prompt": "Prompt",
+      "tab.prompt": "Seleccionar campo de prompt",
       "tab.platform": "Plataforma",
       "tab.inferenceSettings": "Ajustes de inferencia",
       "prompt.selectField": "Seleccionar campo de prompt",
@@ -993,7 +1083,7 @@ const Tool = () => {
       "platform.apiKeyValue": "Valor de la Clave API",
       "platform.addApiKey": "Agregar Clave API",
       "platform.removeApiKey": "Eliminar",
-      "platform.modelName": "Nombre del Modelo",
+      "platform.modelName": "Nombre del Modelo / Ruta del Modelo",
       "inferenceSettings.temperature": "Temperatura",
       "inferenceSettings.topP": "Top P",
       "inferenceSettings.maxToken": "Token Máximo",
@@ -1013,6 +1103,10 @@ const Tool = () => {
       "inferenceSettings.jsonModeNote": "Importante: Al usar JSON mode, también debe instruir al modelo a producir JSON por sí mismo mediante un mensaje del sistema o del usuario. Sin esto, el modelo puede generar una secuencia continua de espacios en blanco hasta que la generación alcance el límite de tokens, resultando en una solicitud que parece 'atascada'. También tenga en cuenta que el contenido del mensaje puede ser parcialmente cortado si finish_reason='length', que indica que la generación excedió max_tokens o que la conversación excedió la longitud máxima del contexto.",  
       "saveConfig": "Guardar",
       "importConfig": "Importar",
+      "platform.gpuOffload": "GPU Offload",
+      "platform.nGpuLayers": "Número de Capas GPU",
+      "platform.gpuMemory": "Memoria GPU",
+      "platform.inputContextLength": "Longitud del Contexto de Entrada",
     },
     fr: {
       "title": "Connexion LLM",
@@ -1039,7 +1133,7 @@ const Tool = () => {
       "platform.apiKeyValue": "Valeur de la Clé API",
       "platform.addApiKey": "Ajouter une Clé API",
       "platform.removeApiKey": "Supprimer",
-      "platform.modelName": "Nom du Modèle",
+      "platform.modelName": "Nom du Modèle / Chemin du Modèle",
       "inferenceSettings.temperature": "Temperatura",
       "inferenceSettings.topP": "Top P",
       "inferenceSettings.maxToken": "Token Maximum",
@@ -1059,6 +1153,10 @@ const Tool = () => {
       "inferenceSettings.jsonModeNote": "Important: Lors de l'utilisation du mode JSON, vous devez également instruire le modèle à produire une réponse JSON par lui-même à l'aide d'un message système ou utilisateur. Sans cela, le modèle peut générer une séquence infinie de blancs jusqu'à ce que la génération atteigne la limite de tokens, entraînant une requête qui semble 'bloquée'. Notez également que le contenu du message peut être partiellement tronqué si finish_reason='length', ce qui signifie que la génération a dépassé le nombre de tokens ou que la conversation a dépassé la longueur maximale du contexte.",
       "saveConfig": "Sauvegarder",
       "importConfig": "Importer",
+      "platform.gpuOffload": "GPU Offload",
+      "platform.nGpuLayers": "Nombre de Capas GPU",
+      "platform.gpuMemory": "Memoire GPU",
+      "platform.inputContextLength": "Longueur du Contexte d'Entrée",
     },
     de: {
       "title": "LLM-Verbindung",
@@ -1085,7 +1183,7 @@ const Tool = () => {
       "platform.apiKeyValue": "API-Schlüssel-Wert",
       "platform.addApiKey": "API-Schlüssel hinzufügen",
       "platform.removeApiKey": "Entfernen",
-      "platform.modelName": "Modellname",
+      "platform.modelName": "Modellname / Modellpfad",
       "inferenceSettings.temperature": "Temperatur",
       "inferenceSettings.topP": "Top P",
       "inferenceSettings.maxToken": "Max Token",
@@ -1105,6 +1203,10 @@ const Tool = () => {
       "inferenceSettings.jsonModeNote": "Wichtig: Beim Verwenden von JSON-Modus muss der Modell auch selbst anweisen, JSON zu produzieren, indem Sie ein System- oder Benutzermeldung senden. Ohne dies wird das Modell eine unendliche Sequenz von Leerzeichen produzieren, bis die Generierung das Tokenlimit erreicht oder die Konversation die maximale Kontextlänge überschreitet, was eine scheinbar 'eingefrorene' Anfrage zur Folge hat. Beachten Sie auch, dass der Nachrichteninhalt möglicherweise teilweise abgeschnitten wird, wenn finish_reason='length', was bedeutet, dass die Generierung das Tokenlimit überschritten hat oder die Konversation die maximale Kontextlänge überschritten hat.",  
       "saveConfig": "Speichern",
       "importConfig": "Importieren",
+      "platform.gpuOffload": "GPU Offload",
+      "platform.nGpuLayers": "Anzahl der GPU-Ebenen",
+      "platform.gpuMemory": "GPU-Speicher",
+      "platform.inputContextLength": "Eingabe-Kontextlänge",
     },
     pt: {
       "title": "ConecteLLM",
@@ -1131,7 +1233,7 @@ const Tool = () => {
       "platform.apiKeyValue": "Valor da Chave API",
       "platform.addApiKey": "Adicionar Chave API",
       "platform.removeApiKey": "Remover",
-      "platform.modelName": "Nome do Modelo",
+      "platform.modelName": "Nome do Modelo / Caminho do Modelo",
       "inferenceSettings.temperature": "Temperatura",
       "inferenceSettings.topP": "Top P",
       "inferenceSettings.maxToken": "Token Máximo",
@@ -1151,6 +1253,10 @@ const Tool = () => {
       "inferenceSettings.jsonModeNote": "Importante: Ao usar o modo JSON, você também deve instruir o modelo a produzir uma resposta JSON por si só usando uma mensagem do sistema ou do usuário. Sem isso, o modelo pode gerar uma sequência infinita de espaços em branco até que a geração atinja o limite de tokens, resultando em uma solicitação que parece 'bloquada'. Note também que o conteúdo da mensagem pode ser parcialmente truncado se finish_reason='length', o que significa que a geração excedeu max_tokens ou que a conversação excedeu o comprimento máximo do contexto.",  
       "saveConfig": "Salvar",
       "importConfig": "Importar",
+      "platform.gpuOffload": "GPU Offload",
+      "platform.nGpuLayers": "Número de Capas GPU",
+      "platform.gpuMemory": "Memoria GPU",
+      "platform.inputContextLength": "Longitude do Contexto de Entrada",
     },
     pl: {
       "title": "LLM Connect",
@@ -1177,7 +1283,7 @@ const Tool = () => {
       "platform.apiKeyValue": "Wartość klucza API",
       "platform.addApiKey": "Dodaj klucz API",
       "platform.removeApiKey": "Usuń",
-      "platform.modelName": "Nazwa modelu",
+      "platform.modelName": "Nazwa modelu / Ścieżka modelu",
       "inferenceSettings.temperature": "Temperatura",
       "inferenceSettings.topP": "Top P",
       "inferenceSettings.maxToken": "Maksymalna liczba tokenów",
@@ -1194,6 +1300,10 @@ const Tool = () => {
       "inferenceSettings.jsonModeNote": "Importante: Ao usar o modo JSON, você também deve instruir o modelo a produzir uma resposta JSON por si só usando uma mensagem do sistema ou do usuário. Sem isso, o modelo pode gerar uma sequência infinita de espaços em branco até que a geração atinja o limite de tokens, resultando em uma solicitação que parece 'bloquada'. Note também que o conteúdo da mensagem pode ser parcialmente truncado se finish_reason='length', o que significa que a geração excedeu max_tokens ou que a conversação excedeu o comprimento máximo do contexto.",  
       "saveConfig": "Salvar",
       "importConfig": "Importar",
+      "platform.gpuOffload": "GPU Offload",
+      "platform.nGpuLayers": "Liczba Warstw GPU",
+      "platform.gpuMemory": "Pamięć GPU",
+      "platform.inputContextLength": "Długość Kontekstu Wejściowego",
     },
     cn: {
       "title": "LLM 连接",
@@ -1220,7 +1330,7 @@ const Tool = () => {
       "platform.apiKeyValue": "API 密钥值",
       "platform.addApiKey": "添加 API 密钥",
       "platform.removeApiKey": "删除",
-      "platform.modelName": "模型名称",
+      "platform.modelName": "模型名称 / 模型路径",
       "inferenceSettings.temperature": "温度",
       "inferenceSettings.topP": "Top P",
       "inferenceSettings.maxToken": "最大令牌数",
@@ -1240,6 +1350,10 @@ const Tool = () => {
       "inferenceSettings.jsonModeNote": "重要：使用 JSON 模式时，模型还必须通过系统或用户消息指示自己生成 JSON。否则，模型可能会生成一个无限序列的空白，直到生成达到令牌限制或对话超过最大上下文长度，导致请求看起来‘卡住’。还要注意，如果 finish_reason='length'，则消息内容可能会被部分截断，这表示生成超过了 max_tokens 或对话超过了最大上下文长度。",  
       "saveConfig": "保存",
       "importConfig": "导入",
+      "platform.gpuOffload": "GPU 卸载",
+      "platform.nGpuLayers": "GPU 层数",
+      "platform.gpuMemory": "GPU 内存",
+      "platform.inputContextLength": "输入上下文长度",
     },
     ja: {
       "title": "LLM 接続",
@@ -1266,7 +1380,7 @@ const Tool = () => {
       "platform.apiKeyValue": "API キー値",
       "platform.addApiKey": "API キーを追加",
       "platform.removeApiKey": "削除",
-      "platform.modelName": "モデル名", 
+      "platform.modelName": "モデル名 / モデルパス", 
       "inferenceSettings.temperature": "温度",
       "inferenceSettings.topP": "Top P",
       "inferenceSettings.maxToken": "最大トークン数",
@@ -1286,6 +1400,10 @@ const Tool = () => {
       "inferenceSettings.jsonModeNote": "重要：使用 JSON 模式时，模型还必须通过系统或用户消息指示自己生成 JSON。否则，模型可能会生成一个无限序列的空白，直到生成达到令牌限制或对话超过最大上下文长度，导致请求看起来‘卡住’。还要注意，如果 finish_reason='length'，则消息内容可能会被部分截断，这表示生成超过了 max_tokens 或对话超过了最大上下文长度。",  
       "saveConfig": "保存",
       "importConfig": "导入",
+      "platform.gpuOffload": "GPU Offload",
+      "platform.nGpuLayers": "GPU 层数",
+      "platform.gpuMemory": "GPU 内存",
+      "platform.inputContextLength": "输入上下文长度",
     },
     ru: {
       "title": "LLM Connect",
@@ -1312,7 +1430,7 @@ const Tool = () => {
       "platform.apiKeyValue": "Значение API-ключа",
       "platform.addApiKey": "Добавить API-ключ",
       "platform.removeApiKey": "Удалить",
-      "platform.modelName": "Имя модели",
+      "platform.modelName": "Имя модели / Путь модели",
       "inferenceSettings.temperature": "Температура",
       "inferenceSettings.topP": "Top P",
       "inferenceSettings.maxToken": "Максимальное количество токенов",
@@ -1332,6 +1450,10 @@ const Tool = () => {
       "inferenceSettings.jsonModeNote": "Важно: При использовании режима JSON модель также должна самостоятельно указать, чтобы она генерировала JSON с помощью системного или пользовательского сообщения. В противном случае модель может генерировать бесконечную последовательность пробелов, пока генерация не достигнет ограничения токенов или диалог не превысит максимальную длину контекста, что может привести к кажущейся 'замороженной' запросу. Также обратите внимание, что содержимое сообщения может быть частично обрезано, если finish_reason='length', что означает, что генерация превысила ограничение токенов или диалог превысил максимальную длину контекста.",  
       "saveConfig": "Сохранить",
       "importConfig": "Импортировать",
+      "platform.gpuOffload": "GPU Offload",
+      "platform.nGpuLayers": "Число GPU-слоев",
+      "platform.gpuMemory": "Память GPU",
+      "platform.inputContextLength": "Длина входного контекста",
     },          
   };
 

@@ -1,5 +1,11 @@
+# Core dependencies
 ayx-python-sdk==2.4.1
+
+# Remote LLm calls
 litellm
 tenacity
 nest-asyncio>=1.5.4
 diskcache
+
+# Local Inference
+llama-cpp-python
