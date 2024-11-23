@@ -13,6 +13,10 @@ This Dev Harness instance is specifically set up for the LLMConnect tool, which 
 - **API Key Management**: Securely input and manage API keys for different LLM providers.
 - **Chat History**: View and manage the history of interactions with the LLM.
 - **Customizable Prompts**: Set custom system prompts and user messages.
+- **Local Inference**: Run models locally on CPU or GPU for enhanced privacy and reduced latency
+  - Automatic GPU detection and utilization when available
+  - Configurable GPU offloading for resource-intensive operations
+  - Fallback to cloud providers when local compute is insufficient
 
 ### Getting Started
 
@@ -25,11 +29,12 @@ The Dev Harness is already equipped with all of the packages you'll need to buil
 
 The `index.tsx` file contains the main `App` component, which includes:
 
-- `ModelSelector`: For choosing the LLM provider and model.
-- `APIKeyInput`: For securely inputting API keys.
-- `AIChatHistory`: Displays the chat history and allows user interaction.
-- `SystemPromptInput`: For setting custom system prompts.
-- `UserMessageInput`: For inputting user messages to the LLM.
+- `ModelSelector`: For choosing the LLM provider and model, including local inference options
+- `APIKeyInput`: For securely inputting API keys
+- `AIChatHistory`: Displays the chat history and allows user interaction
+- `SystemPromptInput`: For setting custom system prompts
+- `UserMessageInput`: For inputting user messages to the LLM
+- `InferenceSettings`: Configure local inference parameters and GPU utilization
 
 ### State Management
 
@@ -39,6 +44,7 @@ The tool uses React's `useState` and `useEffect` hooks for state management, han
 - API keys
 - Chat history
 - System prompts and user messages
+- Local inference settings and GPU configuration
 
 ### Styling
 
