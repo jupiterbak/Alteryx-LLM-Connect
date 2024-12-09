@@ -34,6 +34,7 @@ DEFAULT_NUM_RETRIES = 100
 DEFAULT_INPUT_CONTEXT_LENGTH = 4096
 os.environ["LITELLM_LOCAL_MODEL_COST_MAP"] = "True"
 os.environ["LITELLM_MODE"] = "PRODUCTION"
+DEFAULT_BATCH_SIZE = 512
 
 class LLMConnect(PluginV2):
     """A sample Plugin that passes data from an input connection to an output connection."""
@@ -88,19 +89,38 @@ class LLMConnect(PluginV2):
         # Set litellm global params
         litellm.max_budget = 10000.0 #self.max_budget
         if self.use_caching:
-            self.provider.io.info(f"Using caching")
+            self.provider.io.info(f"Using cache")
             cache_path = os.path.expanduser("~/.ayx/litellm_cache/")
             os.makedirs(os.path.dirname(cache_path), exist_ok=True)
             litellm.cache = Cache(type="disk", disk_cache_dir=cache_path)
             litellm.enable_cache()
         else:
-            self.provider.io.info(f"Not using caching")
+            self.provider.io.info(f"Not using cache")
             litellm.disable_cache() 
         
         # Add logic to handle local inference
         if self.platform == "**Local Inference**":
-            self.provider.io.info(f"Using local inference")
-            self.llama = Llama(model_path=self.model)
+            try:
+                self.provider.io.info(f"Using local inference")
+                if self.gpu_offload:
+                    self.provider.io.info(f"Using GPU offload")
+                    self.llama = Llama(
+                        model_path=self.model,
+                        n_gpu_layers=self.n_gpu_layers,
+                        gpu_memory=self.gpu_memory,
+                        seed=self.seed,
+                        n_ctx=self.input_context_length,
+                        n_batch=DEFAULT_BATCH_SIZE
+                    )
+                else:
+                    self.provider.io.info(f"Using CPU")
+                    self.llama = Llama(
+                        model_path=self.model,
+                        n_ctx=0,  # set to default model context length
+                        n_batch=DEFAULT_BATCH_SIZE 
+                    )
+            except Exception as e:
+                self.provider.io.error(f"Error initializing local inference: {str(e)}")
         else:
             self.llama = None
             self.provider.io.info(f"Using remote inference")
