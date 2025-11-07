@@ -44,6 +44,31 @@
                 "dcm_namespace": "Alteryx",
                 "writes_output_data": true
             }
+        },
+        "HuggingDataset": {
+            "backend": {
+                "tool_module": "ayx_plugins",
+                "tool_class_name": "HuggingDataset"
+            },
+            "ui": {},
+            "configuration": {
+                "long_name": "HuggingDataset",
+                "description": "A tool to import Hugging face datasets in Alteryx Designer",
+                "version": "1.0",
+                "search_tags": [],
+                "help_url": "https://help.alteryx.com/developer-help",
+                "icon_path": "configuration\\HuggingDataset_1_0\\icon.png",
+                "input_anchors": {},
+                "output_anchors": {
+                    "Output": {
+                        "label": "",
+                        "allow_multiple": false,
+                        "optional": false
+                    }
+                },
+                "dcm_namespace": "",
+                "writes_output_data": true
+            }
         }
     },
     "tool_version": "1.0"

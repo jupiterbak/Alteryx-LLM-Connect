@@ -30,11 +30,14 @@ from pandas.core.dtypes.common import is_string_dtype
 from llama_cpp import Llama
 import litellm
 
+# import debugpy
+
 DEFAULT_NUM_RETRIES = 100
 DEFAULT_INPUT_CONTEXT_LENGTH = 4096
 os.environ["LITELLM_LOCAL_MODEL_COST_MAP"] = "True"
 os.environ["LITELLM_MODE"] = "PRODUCTION"
 DEFAULT_BATCH_SIZE = 512
+
 
 class LLMConnect(PluginV2):
     """A sample Plugin that passes data from an input connection to an output connection."""
@@ -85,7 +88,7 @@ class LLMConnect(PluginV2):
         self.create_new_log_file()
 
         litellm.drop_params = True
-        litellm.set_verbose=False
+        litellm.set_verbose=True ##litellm.set_verbose=False
         # Set litellm global params
         litellm.max_budget = 10000.0 #self.max_budget
         if self.use_caching:
@@ -231,10 +234,10 @@ class LLMConnect(PluginV2):
                 "max_tokens": self.max_token,
                 "stop": self.stop,
                 "seed": self.seed,
-                "timeout": 10,
+                # "timeout": 10,
                 "stream": False,
-                "drop_params": False,
-                "num_retries": 100, #self.num_retries,
+                "drop_params": True,
+                # "num_retries": 100, #self.num_retries,
                 "logger_fn": self.my_custom_logging_fn,
             }
 
@@ -383,6 +386,16 @@ class LLMConnect(PluginV2):
         """
         # self.provider.write_to_anchor("Output", batch)  
         # log the batch
+        
+        # ###
+        # # 5678 is the default attach port in the VS Code debug configurations. Unless a host and port are specified, host defaults to 127.0.0.1
+        # debugpy.configure(subProcess=True)
+        # debugpy.listen(5678)
+        # print("Waiting for debugger attach")
+        # debugpy.wait_for_client()
+        # debugpy.debug_this_thread()
+        # debugpy.breakpoint() #must have
+        # print('break on this line')
 
         metadata = batch.schema
         if not any([field_name == self.prompt_field for field_name in metadata.names]):
@@ -396,6 +409,7 @@ class LLMConnect(PluginV2):
         
         # Process the current batch
         if self.batch_processing:
+            # # debugpy.breakpoint()
             # Batch processing
             outputs, prompt_tokens_list, completion_tokens_list, costs = self.process_batch(current_batch)
             
@@ -406,6 +420,7 @@ class LLMConnect(PluginV2):
             current_batch['cost($)'] = costs
         # if local inference 
         elif self.platform == "**Local Inference**":
+            # # debugpy.breakpoint()
             result = current_batch[self.prompt_field].transform(self.process_row_locally)
             
             # Add results to the current batch
@@ -414,6 +429,7 @@ class LLMConnect(PluginV2):
             current_batch['completion_tokens'] = result['completion_tokens']
             current_batch['cost($)'] = result['cost($)']
         else:
+            # # debugpy.breakpoint()
             # Single processing using pandas transform
             result = current_batch[self.prompt_field].transform(self.process_row)
             
@@ -439,10 +455,14 @@ class LLMConnect(PluginV2):
         anchor
             NamedTuple containing anchor.name and anchor.connection.
         """
+        # debugpy.breakpoint()
+        # print('break on on_incoming_connection_complete')
         self.provider.io.info(f"Incoming connection complete for anchor: {anchor.name}")
 
     def on_complete(self) -> None:
         """Clean up any plugin resources."""
+        # debugpy.breakpoint()
+        # print('break on on_complete')
 
         # Write final information and close the log file
         end_time = datetime.now()

@@ -10,16 +10,21 @@ export const config: { supported_platforms: Platform[] } = {
     {
       name: "OpenAI",
       models: [
+        "o4-mini",
+        "o3",
+        "o3-mini",
+        "o1",
         "o1-mini",
-        "o1-preview",
-        "gpt-4o-mini",
-        "gpt-4o-mini-2024-07-18",
+        "o1-pro",
+        "gpt-4.5-preview",
         "gpt-4o",
+        "gpt-4o-mini",
+        "gpt-4o-2024-11-20",
         "gpt-4o-2024-08-06",
         "gpt-4o-2024-05-13",
-        "gpt-4-turbo",
-        "gpt-4-0125-preview",
-        "gpt-4-1106-preview",
+        "gpt-4.1",
+        "gpt-4.1-mini",
+        "gpt-4-nano",
         "gpt-3.5-turbo-1106",
         "gpt-3.5-turbo",
         "gpt-3.5-turbo-0301",
@@ -53,15 +58,19 @@ export const config: { supported_platforms: Platform[] } = {
     {
       name: "Anthropic",
       models: [
+        "claude-3-7-sonnet-latest",
+        "claude-3-7-sonnet-20250219",
+        "claude-3-5-sonnet-latest",
+        "claude-3-5-sonnet-20241022",
         "claude-3-5-sonnet-20240620",
+        "claude-3-5-haiku-latest",
+        "claude-3-5-haiku-20241022",
+        "claude-3-haiku-latest",
         "claude-3-haiku-20240307",
+        "claude-3-opus-latest",
         "claude-3-opus-20240229",
-        "claude-3-5-sonnet-20240620",
         "claude-3-sonnet-20240229",
-        "claude-2.1",
-        "claude-2",
-        "claude-instant-1.2",
-        "claude-instant-1"
+        "claude-3-sonnet-20241022"
       ],
       api_url: "https://api.anthropic.com/v1/messages",
       doc_url: "https://docs.anthropic.com/en/api/messages"
@@ -250,20 +259,18 @@ export const config: { supported_platforms: Platform[] } = {
     {
       name: "Groq",
       models: [
-        "groq/llama2-70b-4096",
+        "groq/gemma2-9b-it",
+        "groq/llama-3.1-70b-versatile",
         "groq/llama-3.1-8b-instant",
-        "groq/llama-3.1-70b-versatile",
-        "groq/llama3-8b-8192",
-        "groq/llama3-70b-8192",
-        "groq/llama-3.1-70b-versatile",
         "groq/llama-guard-3-8b",
-        "groq/llava-v1.5-7b-4096-preview",
         "groq/llama3-70b-8192",
         "groq/llama3-8b-8192",
-        "groq/mixtral-8x7b-32768",
-        "groq/mixtral-8x7b-32768",
-        "groq/gemma-7b-it",
-        "groq/gemma2-9b-it"
+        "groq/allam-2-7b",
+        "groq/deepseek-r1-distill-llama-70b",
+        "meta-llama/llama-4-maverick-17b-128e-instruct",
+        "meta-llama/llama-4-scout-17b-16e-instruct",
+        "groq/mistral-saba-24b",
+        "groq/qwen-qwq-32b"
       ], // Add specific models as needed
       api_url: "https://api.groq.com/openai/v1/chat/completions",
       doc_url: "https://console.groq.com/docs/api-reference#chat-create"
@@ -301,8 +308,16 @@ export const config: { supported_platforms: Platform[] } = {
     {
       name: "DeepSeek",
       models: [
-        "deepseek/deepseek-chat",
-        "deepseek/deepseek-coder"
+        "deepseek/deepseek-coder-33b-instruct",
+        "deepseek/deepseek-coder-6.7b-instruct",
+        "deepseek/deepseek-math-7b-instruct",
+        "deepseek/deepseek-llm-67b-chat",
+        "deepseek/deepseek-llm-7b-chat",
+        "deepseek/deepseek-ai-67b-chat",
+        "deepseek/deepseek-moe-16b-chat",
+        "deepseek/deepseek-coder-1.3b-instruct",
+        "deepseek/deepseek-coder-6.7b-base",
+        "deepseek/deepseek-coder-33b-base"
       ],
       api_url: "https://api.deepseek.com/v1/chat/completions",
       doc_url: "https://platform.deepseek.com/api-docs/"
