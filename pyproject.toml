@@ -1,0 +1,13 @@
+[project]
+name = "maxllm"
+authors = [
+    { name="Jupiter Bakakeu", email="jupiter.bakakeu@gmail.com" }
+]
+version = "0.1.0"
+description = "A universal LLm connector that support local inference."
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "ayx-python-sdk",
+    "ayx-plugin-cli"
+]
