@@ -1,10 +1,10 @@
-import React, { useContext, useEffect, useState } from 'react';
+import React, { useContext, useEffect, useMemo, useState } from 'react';
 import ReactDOM from 'react-dom';
 import { AyxAppWrapper, Box, Tabs, Tab, Typography, makeStyles, Theme, Grid, NativeSelect, TextField, Checkbox, FormControlLabel, FormGroup, Button, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper, IconButton, Slider } from '@alteryx/ui';
 import { Alteryx, Delete as DeleteIcon, Plus as AddIcon, Server as BatchIcon, Save as SaveIcon, Download as ImportIcon } from '@alteryx/icons';
 import { Context as UiSdkContext, DesignerApi, JsEvent } from '@alteryx/react-comms';
 import { IntlProvider, FormattedMessage } from 'react-intl';
-import { config, Platform } from './config';
+import { loadConfig, Config, Platform } from './config';
 
 const DEFAULT_PLATFORM = "OpenAI"
 const DEFAULT_ENDPOINT = "https://api.openai.com/v1/chat/completions"
@@ -33,18 +33,24 @@ const DEFAULT_GPU_MEMORY = 50
 const DEFAULT_INPUT_CONTEXT_LENGTH = 4096
 
 
-// Extract supported platforms, models, and API URLs
-const platformConfig = config.supported_platforms
-  .sort((a, b) => a.name.localeCompare(b.name))  // Sort platforms alphabetically by name
-  .reduce((acc, platform) => {
+interface PlatformConfig {
+  [platformName: string]: {
+    models: string[];
+    apiUrl: string;
+  };
+}
+
+const getSortedPlatforms = (supportedPlatforms: Platform[]): Platform[] =>
+  [...supportedPlatforms].sort((a, b) => a.name.localeCompare(b.name));
+
+const getPlatformConfig = (supportedPlatforms: Platform[]): PlatformConfig =>
+  getSortedPlatforms(supportedPlatforms).reduce<PlatformConfig>((acc, platform) => {
     acc[platform.name] = {
       models: platform.models,
       apiUrl: platform.api_url
     };
     return acc;
   }, {});
-
-const platformOptions = Object.keys(platformConfig);
 
 const useStyles = makeStyles((theme: Theme) => ({
   root: {
@@ -121,8 +127,21 @@ const App = () => {
   const classes = useStyles();
   const [model, handleUpdateModel] = useContext(UiSdkContext);
   const [activeTab, setActiveTab] = useState(0);
+  const [config, setConfig] = useState<Config>({ supported_platforms: [] });
   const [selectedPlatform, setSelectedPlatform] = useState<Platform | null>(null);
   const [fieldNames, setFieldNames] = useState<string[]>([]);
+  const sortedPlatforms = useMemo(
+    () => getSortedPlatforms(config.supported_platforms),
+    [config.supported_platforms]
+  );
+  const platformConfig = useMemo(
+    () => getPlatformConfig(config.supported_platforms),
+    [config.supported_platforms]
+  );
+  const platformOptions = useMemo(
+    () => sortedPlatforms.map(platform => platform.name),
+    [sortedPlatforms]
+  );
 
   const updateFieldNames = async () => {
     if (window.Alteryx) {
@@ -145,6 +164,25 @@ const App = () => {
 
   useEffect(() => {
     updateFieldNames();
+  }, []);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    loadConfig().then(loadedConfig => {
+      if (!isMounted) {
+        return;
+      }
+
+      setConfig(loadedConfig);
+      setSelectedPlatform(
+        loadedConfig.supported_platforms.find(platform => platform.name === model.Configuration.platform) || null
+      );
+    });
+
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   useEffect(() => {
@@ -676,7 +714,7 @@ const App = () => {
                   className={classes.textField}
                   inputProps={{ placeholder: 'Select a model' }}
                 >
-                  {model.Configuration.platform && platformConfig[model.Configuration.platform].models.map((modelOption) => (
+                  {model.Configuration.platform && (platformConfig[model.Configuration.platform]?.models || []).map((modelOption) => (
                     <option key={modelOption} value={modelOption}>
                       {modelOption}
                     </option>

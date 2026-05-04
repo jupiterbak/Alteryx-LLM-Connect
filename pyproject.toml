@@ -9,5 +9,6 @@ readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "ayx-python-sdk",
-    "ayx-plugin-cli"
+    "ayx-plugin-cli",
+    "pip>=26.1",
 ]

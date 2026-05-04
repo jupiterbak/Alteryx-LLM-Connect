@@ -102,3 +102,5 @@ pip-delete-this-directory.txt
 *.yxdb
 *.yxft
 *.bak
+
+.claude/

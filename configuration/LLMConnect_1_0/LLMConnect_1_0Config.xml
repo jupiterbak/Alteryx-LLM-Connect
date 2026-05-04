@@ -4,9 +4,9 @@
 	<EngineSettings EngineDll="SdkEnginePlugin.dll" EngineDllEntryPoint="SdkEnginePlugin" SDKVersion="10.1"/>
 	<SdkSettings Manifest="True" Language="Python">
 		<CustomParameters>
-			<Version Value="2.4.1"/>
+			<Version Value="2.5.2"/>
 			<ToolVersion Value="1.0"/>
-			<WritesOutputData Value="True"/>
+			<WritesOutputData Value="true"/>
 		</CustomParameters>
 	</SdkSettings>
 	<GuiSettings Html="index.html" Icon="icon.png" SDKVersion="10.1" Help="https://help.alteryx.com/developer-help">

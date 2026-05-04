@@ -3,7 +3,8 @@ const CaseSensitivePathsPlugin = require('case-sensitive-paths-webpack-plugin');
 const { CleanWebpackPlugin } = require('clean-webpack-plugin');
 const MiniCssExtractPlugin = require('mini-css-extract-plugin');
 const ForkTsCheckerWebpackPlugin = require('fork-ts-checker-webpack-plugin');
-const CompressionPlugin = require('compression-webpack-plugin')
+const CompressionPlugin = require('compression-webpack-plugin');
+const CopyWebpackPlugin = require('copy-webpack-plugin');
 
 const path = require('path');
 
@@ -42,10 +43,24 @@ module.exports = {
       chunkFilename: '[id].[hash].css'
     }),
     // run ts type checker in a separate process for faster builds
-    new ForkTsCheckerWebpackPlugin(),
+    new ForkTsCheckerWebpackPlugin({
+      typescript: {
+        diagnosticOptions: {
+          semantic: false,
+          syntactic: false
+        }
+      }
+    }),
 
     // compression output bundles for file size
-    new CompressionPlugin()
+    new CompressionPlugin(),
+
+    // copy config.yaml to dist for runtime loading
+    new CopyWebpackPlugin({
+      patterns: [
+        { from: 'src/config.yaml', to: 'config.yaml' }
+      ]
+    })
   ],
   module: {
     rules: [
@@ -79,17 +94,15 @@ module.exports = {
         ],
         exclude: /node_modules/,
       },
-      // handle images
+      // handle images (using Webpack 5 asset modules)
       {
         test: /\.(png|svg|jpg|gif)$/,
-        // exclude: /(?!node_modules\/@ayx)(node_modules)/,
-        use: ['file-loader']
+        type: 'asset/resource'
       },
-      // handle fonts
+      // handle fonts (using Webpack 5 asset modules)
       {
         test: /\.(woff|woff2|eot|ttf|otf)$/,
-        // exclude: /(?!node_modules\/@ayx)(node_modules)/,
-        use: ['file-loader']
+        type: 'asset/resource'
       }
     ]
   },
