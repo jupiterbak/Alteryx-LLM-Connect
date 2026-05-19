@@ -1,5 +1,7 @@
 # ConnectLLM for Alteryx
 
+> **Disclaimer:** This is an independent, community-built tool and is **not officially supported or endorsed by Alteryx**. It is designed by the community, for the community. For issues or questions, please use the [GitHub repository](https://github.com/jupiterbak/Alteryx-LLM-Connect/issues) — do not contact Alteryx support.
+
 ConnectLLM is a powerful and flexible custom Tool for Alteryx that enables seamless integration with over 1000 Large Language Models (LLMs) across more than 20 platforms for batch completions. This tool simplifies the process of interacting with a vast array of language models, making it easy for Alteryx users to incorporate advanced natural language processing capabilities into their workflows, regardless of their preferred AI provider or model.
 
 ## Features
@@ -170,4 +172,4 @@ ConnectLLM for Alteryx is released under the MIT License. See the [LICENSE](LICE
 
 ## Support
 
-If you encounter any issues or have questions, please file an issue on our [GitHub repository](https://github.com/jupiterbak/ConnectLLM-Alteryx/issues) or contact Alteryx support.
+If you encounter any issues or have questions, please file an issue on our [GitHub repository](https://github.com/jupiterbak/Alteryx-LLM-Connect/issues). This tool is community-maintained — please do not contact Alteryx support.
