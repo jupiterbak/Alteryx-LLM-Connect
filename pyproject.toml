@@ -6,9 +6,19 @@ authors = [
 version = "0.1.0"
 description = "A universal LLm connector that support local inference."
 readme = "README.md"
-requires-python = ">=3.13"
+requires-python = "==3.10.13"
 dependencies = [
     "ayx-python-sdk",
     "ayx-plugin-cli",
     "pip>=26.1",
+    "litellm>=1.83.0",
+    "tenacity>=9.1.4",
+    "nest-asyncio>=1.6.0",
+    "diskcache>=5.6.3",
+    "pyarrow>=18.1.0",
+    "llama-cpp-python>=0.3.22",
+    "pytest>=9.0.3",
 ]
+
+[tool.pytest.ini_options]
+testpaths = ["backend"]

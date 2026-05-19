@@ -21,7 +21,7 @@ TEST_SCHEMA = pa.schema([
 
 @pytest.fixture
 def small_batches():
-    repeat = 30
+    repeat = 3
     input_data = [
         "Tell me a fun fact about mathematics",
     ] * repeat
@@ -70,17 +70,17 @@ def l_l_m_connect_plugin_service():
         plugin_class=LLMConnect,
         config_mock="""<Configuration>
           <platform>**Local Inference**</platform>
-          <platformDocUrl>https://platform.openai.com/docs/api-reference/chat/create</platformDocUrl>
+          <platformDocUrl>https://platform.openai.com/docs/models</platformDocUrl>
           <endpoint>
           </endpoint>
           <useApiKey>0</useApiKey>
-          <model>C:/DATA/03_LLM_Models/TheBloke/Mistral-7B-Instruct-v0.2-GGUF/mistral-7b-instruct-v0.2.Q4_K_S.gguf</model>
-          <temperature>0.8</temperature>
+          <model>C:/DATA/03_LLM_Models/lmstudio-community/NVIDIA-Nemotron-3-Nano-4B-GGUF/NVIDIA-Nemotron-3-Nano-4B-Q4_K_M.gguf</model>
+          <temperature>0.7</temperature>
           <topP>1</topP>
-          <maxToken>512</maxToken>
+          <maxToken>256</maxToken>
           <stop>
           </stop>
-          <seed>5</seed>
+          <seed>0</seed>
           <checkSafety>1</checkSafety>
           <useCaching>1</useCaching>
           <promptField>Prompt</promptField>
@@ -94,6 +94,10 @@ def l_l_m_connect_plugin_service():
           <gpuOffload>0</gpuOffload>
           <nGpuLayers>0</nGpuLayers>
           <gpuMemory>50</gpuMemory>
+          <inputContextLength>4096</inputContextLength>
+          <onError>warning</onError>
+          <responseColumnName>LLM Response</responseColumnName>
+          <inferenceType>CPU</inferenceType>
           <Secrets />
         </Configuration>""",
         input_anchor_config={

@@ -1,6 +1,6 @@
 import React, { useContext, useEffect, useMemo, useState } from 'react';
 import ReactDOM from 'react-dom';
-import { AyxAppWrapper, Box, Tabs, Tab, Typography, makeStyles, Theme, Grid, NativeSelect, TextField, Checkbox, FormControlLabel, FormGroup, Button, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper, IconButton, Slider } from '@alteryx/ui';
+import { AyxAppWrapper, Box, Tabs, Tab, Typography, makeStyles, Theme, Grid, NativeSelect, TextField, Checkbox, FormControlLabel, FormGroup, Button, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, Paper, IconButton, Slider, Tooltip } from '@alteryx/ui';
 import { Alteryx, Delete as DeleteIcon, Plus as AddIcon, Server as BatchIcon, Save as SaveIcon, Download as ImportIcon } from '@alteryx/icons';
 import { Context as UiSdkContext, DesignerApi, JsEvent } from '@alteryx/react-comms';
 import { IntlProvider, FormattedMessage } from 'react-intl';
@@ -31,6 +31,10 @@ const DEFAULT_GPU_OFFLOAD = "0"
 const DEFAULT_N_GPU_LAYERS = 0
 const DEFAULT_GPU_MEMORY = 50
 const DEFAULT_INPUT_CONTEXT_LENGTH = 4096
+const DEFAULT_ON_ERROR = "warning"
+const DEFAULT_RESPONSE_COLUMN_NAME = "LLM Response"
+const DEFAULT_INFERENCE_TYPE = "Remote"
+const DEFAULT_LOCAL_SERVER_ENDPOINT = "http://localhost:11434/v1/chat/completions"
 
 
 interface PlatformConfig {
@@ -121,6 +125,12 @@ const useStyles = makeStyles((theme: Theme) => ({
     padding: theme.spacing(2),
     marginTop: theme.spacing(1),
   },
+  sectionHeader: {
+    fontWeight: 'bold',
+    textTransform: 'uppercase' as const,
+    marginTop: theme.spacing(1),
+    marginBottom: theme.spacing(0.5),
+  },
 }));
 
 const App = () => {
@@ -128,6 +138,8 @@ const App = () => {
   const [model, handleUpdateModel] = useContext(UiSdkContext);
   const [activeTab, setActiveTab] = useState(0);
   const [config, setConfig] = useState<Config>({ supported_platforms: [] });
+  const effectiveInferenceType = model.Configuration.inferenceType ||
+    (model.Configuration.platform === "**Local Inference**" ? "CPU" : "Remote");
   const [selectedPlatform, setSelectedPlatform] = useState<Platform | null>(null);
   const [fieldNames, setFieldNames] = useState<string[]>([]);
   const sortedPlatforms = useMemo(
@@ -200,16 +212,6 @@ const App = () => {
     setActiveTab(newValue);
   };
 
-  const handlePromptFieldChange = (event: React.ChangeEvent<{ value: unknown }>) => {
-    handleUpdateModel({
-      ...model,
-      Configuration: {
-        ...model.Configuration,
-        promptField: event.target.value as string
-      }
-    });
-  };
-
   const handlePlatformChange = async (event: React.ChangeEvent<{ value: unknown }>) => {
     const selectedPlatform = event.target.value as string;
     const selectedPlatformConfig = config.supported_platforms.find(p => p.name === selectedPlatform);
@@ -277,26 +279,6 @@ const App = () => {
       Configuration: {
         ...model.Configuration,
         enforceJsonResponse,
-      }
-    });
-  };
-
-  const handleSystemPromptChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    handleUpdateModel({
-      ...model,
-      Configuration: {
-        ...model.Configuration,
-        systemPrompt: event.target.value
-      }
-    });
-  };
-
-  const handleUseSystemPromptChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    handleUpdateModel({
-      ...model,
-      Configuration: {
-        ...model.Configuration,
-        useSystemPrompt: event.target.checked ? "1" : "0"
       }
     });
   };
@@ -507,6 +489,81 @@ const App = () => {
     });
   };
 
+  const handleInferenceTypeChange = (event: React.ChangeEvent<{ value: unknown }>) => {
+    const newType = event.target.value as string;
+    const updates: Record<string, unknown> = { inferenceType: newType };
+
+    if (newType === "Localhost") {
+      updates.platform = "**Localhost**";
+      updates.endpoint = DEFAULT_LOCAL_SERVER_ENDPOINT;
+      updates.model = '';
+      updates.gpuOffload = DEFAULT_GPU_OFFLOAD;
+      updates.nGpuLayers = DEFAULT_N_GPU_LAYERS;
+      updates.gpuMemory = DEFAULT_GPU_MEMORY;
+      setSelectedPlatform(null);
+    } else if (newType === "CPU") {
+      updates.platform = "**Local Inference**";
+      updates.endpoint = '';
+      updates.model = '';
+      updates.gpuOffload = DEFAULT_GPU_OFFLOAD;
+      updates.nGpuLayers = DEFAULT_N_GPU_LAYERS;
+      updates.gpuMemory = DEFAULT_GPU_MEMORY;
+      setSelectedPlatform(null);
+    } else {
+      const firstRemote = sortedPlatforms.find(p => p.name !== "**Local Inference**");
+      if (firstRemote) {
+        updates.platform = firstRemote.name;
+        updates.endpoint = firstRemote.api_url;
+        updates.model = firstRemote.models[0] || '';
+        updates.platformDocUrl = firstRemote.doc_url || DEFAULT_PLATFORM_DOC_URL;
+        setSelectedPlatform(firstRemote);
+      }
+      updates.gpuOffload = DEFAULT_GPU_OFFLOAD;
+      updates.nGpuLayers = DEFAULT_N_GPU_LAYERS;
+      updates.gpuMemory = DEFAULT_GPU_MEMORY;
+    }
+
+    handleUpdateModel({
+      ...model,
+      Configuration: { ...model.Configuration, ...updates }
+    });
+  };
+
+  const handlePromptFieldChange = (event: React.ChangeEvent<{ value: unknown }>) => {
+    handleUpdateModel({
+      ...model,
+      Configuration: { ...model.Configuration, promptField: event.target.value as string }
+    });
+  };
+
+  const handleSystemPromptChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    handleUpdateModel({
+      ...model,
+      Configuration: { ...model.Configuration, systemPrompt: event.target.value }
+    });
+  };
+
+  const handleUseSystemPromptChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    handleUpdateModel({
+      ...model,
+      Configuration: { ...model.Configuration, useSystemPrompt: event.target.checked ? "1" : "0" }
+    });
+  };
+
+  const handleOnErrorChange = (event: React.ChangeEvent<{ value: unknown }>) => {
+    handleUpdateModel({
+      ...model,
+      Configuration: { ...model.Configuration, onError: event.target.value as string }
+    });
+  };
+
+  const handleResponseColumnNameChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    handleUpdateModel({
+      ...model,
+      Configuration: { ...model.Configuration, responseColumnName: event.target.value }
+    });
+  };
+
   const saveConfiguration = () => {
     const config = JSON.stringify(model.Configuration, null, 2);
     const blob = new Blob([config], { type: 'application/json' });
@@ -652,84 +709,139 @@ const App = () => {
                 className={`${classes.textField} ${classes.textFieldLabel}`}
               />
             </Grid>
+
+            {/* ERROR HANDLING */}
+            <Grid item xs={12}>
+              <Typography variant="subtitle1" className={classes.sectionHeader}>
+                <FormattedMessage id="errorHandling.title" defaultMessage="ERROR HANDLING" />
+              </Typography>
+            </Grid>
+            <Grid item xs={12}>
+              <Typography variant="body2">
+                <FormattedMessage id="errorHandling.onError" defaultMessage="On Error" />
+              </Typography>
+              <NativeSelect
+                value={model.Configuration.onError || DEFAULT_ON_ERROR}
+                onChange={handleOnErrorChange}
+                fullWidth
+              >
+                <option value="warning">Warning - Continue Processing Records</option>
+                <option value="error">Error - Stop Processing Records</option>
+              </NativeSelect>
+            </Grid>
+            <Grid item xs={12}>
+              <Box display="flex" alignItems="center">
+                <Typography variant="body2">
+                  <FormattedMessage id="errorHandling.responseColumnName" defaultMessage="Response Column Name" />
+                </Typography>
+                <Tooltip title="Name of the output column that will contain the LLM response">
+                  <IconButton size="small" style={{ padding: 2, marginLeft: 4 }}>
+                    <span style={{ fontSize: 11, fontWeight: 'bold', color: '#666', border: '1px solid #999', borderRadius: '50%', padding: '0 3px', lineHeight: '14px', display: 'inline-block' }}>i</span>
+                  </IconButton>
+                </Tooltip>
+              </Box>
+              <TextField
+                value={model.Configuration.responseColumnName !== undefined ? model.Configuration.responseColumnName : DEFAULT_RESPONSE_COLUMN_NAME}
+                onChange={handleResponseColumnNameChange}
+                fullWidth
+              />
+            </Grid>
           </Grid>
         )}
         {activeTab === 1 && (
           <Grid container spacing={2}>
+            {/* Inference Type */}
             <Grid item xs={12}>
               <Typography variant="subtitle1">
-                <FormattedMessage id="platform.select" defaultMessage="Select Platform" />
+                <FormattedMessage id="platform.inferenceType" defaultMessage="Inference Type" />
               </Typography>
               <NativeSelect
-                value={model.Configuration.platform || ''}
-                onChange={handlePlatformChange}
+                value={effectiveInferenceType}
+                onChange={handleInferenceTypeChange}
                 fullWidth
                 className={classes.textField}
-                inputProps={{ placeholder: 'Select a platform' }}
               >
-                {platformOptions.map((option) => (
-                  <option key={option} value={option}>
-                    {option}
-                  </option>
-                ))}
+                <option value="Remote">Remote</option>
+                <option value="Localhost">Localhost</option>
+                <option value="CPU">CPU</option>
               </NativeSelect>
-              {!model.Configuration.platform && (
-                <Typography variant="caption" className={classes.warningLabel}>
-                  <FormattedMessage id="platform.warningLabel" defaultMessage="Please select a platform." />
-                </Typography>
-              )}
             </Grid>
-            
-            {model.Configuration.platform !== "**Local Inference**" && (
-              <Grid item xs={12}>
-                <TextField
-                  label={<FormattedMessage id="platform.url" defaultMessage="URL" />}
-                  value={model.Configuration.endpoint || ''}
-                  onChange={handleEndpointChange}
-                  fullWidth
-                  className={`${classes.textField} ${classes.textFieldLabel}`}
-                />
-              </Grid>
-            )}
 
-            <Grid item xs={12}>
-              {model.Configuration.platform !== "Others (Custom)" && model.Configuration.platform !== "**Local Inference**" && (
-                <Typography variant="subtitle1">
-                  <FormattedMessage id="platform.selectModel" defaultMessage="Select Model" />
-                </Typography>
-              )}
-              {model.Configuration.platform === "Others (Custom)" || model.Configuration.platform === "**Local Inference**" ? (
-                <TextField
-                  label={<FormattedMessage id="platform.modelName" defaultMessage="Model Name / Model Path" />}
-                  value={model.Configuration.model || ''}
-                  onChange={(event) => handleModelChange({ target: { value: event.target.value } })}
-                  fullWidth
-                  className={classes.textField}
-                />
-              ) : (
-                <NativeSelect
-                  value={model.Configuration.model || ''}
-                  onChange={handleModelChange}
-                  fullWidth
-                  className={classes.textField}
-                  inputProps={{ placeholder: 'Select a model' }}
-                >
-                  {model.Configuration.platform && (platformConfig[model.Configuration.platform]?.models || []).map((modelOption) => (
-                    <option key={modelOption} value={modelOption}>
-                      {modelOption}
-                    </option>
-                  ))}
-                </NativeSelect>
-              )}
-              {!model.Configuration.model && (
-                <Typography variant="caption" className={classes.warningLabel}>
-                  <FormattedMessage id="platform.modelWarningLabel" defaultMessage="Please select a model." />
-                </Typography>
-              )}
-            </Grid>
-            
-            {model.Configuration.platform !== "**Local Inference**" && (
+            {/* Remote fields */}
+            {effectiveInferenceType === "Remote" && (
               <>
+                <Grid item xs={12}>
+                  <Typography variant="subtitle1">
+                    <FormattedMessage id="platform.select" defaultMessage="Select Platform" />
+                  </Typography>
+                  <NativeSelect
+                    value={model.Configuration.platform || ''}
+                    onChange={handlePlatformChange}
+                    fullWidth
+                    className={classes.textField}
+                    inputProps={{ placeholder: 'Select a platform' }}
+                  >
+                    {platformOptions
+                      .filter(option => option !== "**Local Inference**")
+                      .map((option) => (
+                        <option key={option} value={option}>
+                          {option}
+                        </option>
+                      ))}
+                  </NativeSelect>
+                  {!model.Configuration.platform && (
+                    <Typography variant="caption" className={classes.warningLabel}>
+                      <FormattedMessage id="platform.warningLabel" defaultMessage="Please select a platform." />
+                    </Typography>
+                  )}
+                </Grid>
+
+                <Grid item xs={12}>
+                  <TextField
+                    label={<FormattedMessage id="platform.url" defaultMessage="URL" />}
+                    value={model.Configuration.endpoint || ''}
+                    onChange={handleEndpointChange}
+                    fullWidth
+                    className={`${classes.textField} ${classes.textFieldLabel}`}
+                  />
+                </Grid>
+
+                <Grid item xs={12}>
+                  {model.Configuration.platform !== "Others (Custom)" ? (
+                    <>
+                      <Typography variant="subtitle1">
+                        <FormattedMessage id="platform.selectModel" defaultMessage="Select Model" />
+                      </Typography>
+                      <NativeSelect
+                        value={model.Configuration.model || ''}
+                        onChange={handleModelChange}
+                        fullWidth
+                        className={classes.textField}
+                        inputProps={{ placeholder: 'Select a model' }}
+                      >
+                        {model.Configuration.platform && (platformConfig[model.Configuration.platform]?.models || []).map((modelOption) => (
+                          <option key={modelOption} value={modelOption}>
+                            {modelOption}
+                          </option>
+                        ))}
+                      </NativeSelect>
+                    </>
+                  ) : (
+                    <TextField
+                      label={<FormattedMessage id="platform.modelName" defaultMessage="Model Name / Model Path" />}
+                      value={model.Configuration.model || ''}
+                      onChange={(event) => handleUpdateModel({ ...model, Configuration: { ...model.Configuration, model: event.target.value } })}
+                      fullWidth
+                      className={classes.textField}
+                    />
+                  )}
+                  {!model.Configuration.model && (
+                    <Typography variant="caption" className={classes.warningLabel}>
+                      <FormattedMessage id="platform.modelWarningLabel" defaultMessage="Please select a model." />
+                    </Typography>
+                  )}
+                </Grid>
+
                 <Grid item xs={12}>
                   <FormControlLabel
                     control={
@@ -743,7 +855,7 @@ const App = () => {
                     label={<FormattedMessage id="platform.useApiKey" defaultMessage="Use API Key" />}
                   />
                 </Grid>
-                
+
                 <Grid item xs={12}>
                   <Typography variant="body2" color="textSecondary">
                     <FormattedMessage
@@ -752,10 +864,7 @@ const App = () => {
                       values={{
                         docLink: (
                           <a href={model.Configuration.platformDocUrl || '#'} target="_blank" rel="noopener noreferrer">
-                            <FormattedMessage
-                              id="apiKeyInstructions.docLink"
-                              defaultMessage="this link"
-                            />
+                            <FormattedMessage id="apiKeyInstructions.docLink" defaultMessage="this link" />
                           </a>
                         ),
                       }}
@@ -764,26 +873,85 @@ const App = () => {
                 </Grid>
               </>
             )}
-            {model.Configuration.platform === "**Local Inference**" && (
-              <Grid item xs={12}>
-                <Box className={classes.gpuSettingsGroup}>
-                  <FormGroup>
-                    <FormControlLabel
-                      control={
-                        <Checkbox
-                          checked={model.Configuration.gpuOffload === "1"}
-                          onChange={handleGpuOffloadChange}
-                          color="primary"
-                        />
-                      }
-                      label={<FormattedMessage id="platform.gpuOffload" defaultMessage="GPU Offload" />}
+
+            {/* Local fields (Ollama / LM Studio) */}
+            {effectiveInferenceType === "Localhost" && (
+              <>
+                <Grid item xs={12}>
+                  <TextField
+                    label={<FormattedMessage id="platform.serverUrl" defaultMessage="Server URL" />}
+                    value={model.Configuration.endpoint || ''}
+                    onChange={handleEndpointChange}
+                    fullWidth
+                    className={`${classes.textField} ${classes.textFieldLabel}`}
+                  />
+                </Grid>
+                <Grid item xs={12}>
+                  <TextField
+                    label={<FormattedMessage id="platform.modelNameOnly" defaultMessage="Model Name" />}
+                    value={model.Configuration.model || ''}
+                    onChange={(event) => handleUpdateModel({ ...model, Configuration: { ...model.Configuration, model: event.target.value } })}
+                    fullWidth
+                    className={classes.textField}
+                  />
+                  {!model.Configuration.model && (
+                    <Typography variant="caption" className={classes.warningLabel}>
+                      <FormattedMessage id="platform.modelWarningLabel" defaultMessage="Please select a model." />
+                    </Typography>
+                  )}
+                </Grid>
+              </>
+            )}
+
+            {/* CPU / GPU fields (local file inference) */}
+            {effectiveInferenceType === "CPU" && (
+              <>
+                <Grid item xs={12}>
+                  <Typography variant="body2">
+                    <FormattedMessage id="platform.modelPath" defaultMessage="Model Path" />
+                  </Typography>
+                  <Box display="flex" alignItems="stretch" style={{ gap: 8, marginBottom: 16 }}>
+                    <TextField
+                      value={model.Configuration.model || ''}
+                      onChange={(event) => handleUpdateModel({ ...model, Configuration: { ...model.Configuration, model: event.target.value } })}
+                      fullWidth
+                      placeholder="Select a model file..."
                     />
-                  </FormGroup>
-                  {/* <Typography variant="subtitle1" className={classes.italicText}>
-                    <FormattedMessage id="platform.gpuSettings" defaultMessage="GPU Settings" />
-                  </Typography> */}
-                  {model.Configuration.gpuOffload === "1" && (
-                    <>
+                    <Button
+                      color="primary"
+                      variant="contained"
+                      style={{ whiteSpace: 'nowrap' }}
+                      onClick={async () => {
+                        const val = await JsEvent('FileBrowse', {});
+                        if (val) {
+                          handleUpdateModel({ ...model, Configuration: { ...model.Configuration, model: val as string } });
+                        }
+                      }}
+                    >
+                      <FormattedMessage id="platform.browse" defaultMessage="Browse" />
+                    </Button>
+                  </Box>
+                  {!model.Configuration.model && (
+                    <Typography variant="caption" className={classes.warningLabel}>
+                      <FormattedMessage id="platform.modelWarningLabel" defaultMessage="Please select a model." />
+                    </Typography>
+                  )}
+                </Grid>
+                <Grid item xs={12}>
+                  <Box className={classes.gpuSettingsGroup}>
+                    <FormGroup>
+                      <FormControlLabel
+                        control={
+                          <Checkbox
+                            checked={model.Configuration.gpuOffload === "1"}
+                            onChange={handleGpuOffloadChange}
+                            color="primary"
+                          />
+                        }
+                        label={<FormattedMessage id="platform.gpuOffload" defaultMessage="GPU Offload" />}
+                      />
+                    </FormGroup>
+                    {model.Configuration.gpuOffload === "1" && (
                       <Grid container spacing={2}>
                         <Grid item xs={12}>
                           <TextField
@@ -819,10 +987,7 @@ const App = () => {
                             onChange={(_, value) => {
                               handleUpdateModel({
                                 ...model,
-                                Configuration: {
-                                  ...model.Configuration,
-                                  gpuMemory: value as number
-                                }
+                                Configuration: { ...model.Configuration, gpuMemory: value as number }
                               });
                             }}
                             min={0}
@@ -832,10 +997,10 @@ const App = () => {
                           />
                         </Grid>
                       </Grid>
-                    </>
-                  )}
-                </Box>
-              </Grid>
+                    )}
+                  </Box>
+                </Grid>
+              </>
             )}
           </Grid>
         )}
@@ -1021,7 +1186,6 @@ const Tool = () => {
       platformDocUrl: DEFAULT_PLATFORM_DOC_URL,
       endpoint: DEFAULT_ENDPOINT,
       useApiKey: DEFAULT_USE_API_KEY,
-      //apiKeys: DEFAULT_API_KEYS,
       model: DEFAULT_MODEL,
       temperature: DEFAULT_TEMPERATURE,
       topP: DEFAULT_TOP_P,
@@ -1034,7 +1198,6 @@ const Tool = () => {
       systemPrompt: DEFAULT_SYSTEM_PROMPT,
       useSystemPrompt: USE_SYSTEM_PROMPT,
       maxBudget: DEFAULT_MAX_BUDGET,
-      //numRetries: DEFAULT_NUM_RETRIES,
       simulateResponse: DEFAULT_SIMULATE_RESPONSE,
       simulateResponseText: DEFAULT_SIMULATE_RESPONSE_TEXT,
       batchProcessing: DEFAULT_BATCH_PROCESSING,
@@ -1042,6 +1205,10 @@ const Tool = () => {
       gpuOffload: DEFAULT_GPU_OFFLOAD,
       nGpuLayers: DEFAULT_N_GPU_LAYERS,
       gpuMemory: DEFAULT_GPU_MEMORY,
+      inputContextLength: DEFAULT_INPUT_CONTEXT_LENGTH,
+      onError: DEFAULT_ON_ERROR,
+      responseColumnName: DEFAULT_RESPONSE_COLUMN_NAME,
+      inferenceType: DEFAULT_INFERENCE_TYPE,
     }
   };
 
@@ -1058,6 +1225,8 @@ const Tool = () => {
       "prompt.warningLabel": "Please select a prompt field.",
       "prompt.useSystemPrompt": "Use System Prompt",
       "prompt.systemPrompt": "System Prompt",
+      "platform.inferenceType": "Inference Type",
+      "platform.serverUrl": "Server URL",
       "platform.select": "Select Platform",
       "platform.selectOption": "Select a platform",
       "platform.selectModel": "Select Model",
@@ -1072,6 +1241,9 @@ const Tool = () => {
       "platform.addApiKey": "Add API Key",
       "platform.removeApiKey": "Remove",
       "platform.modelName": "Model Name / Model Path",
+      "platform.modelNameOnly": "Model Name",
+      "platform.modelPath": "Model Path",
+      "platform.browse": "Browse",
       "inferenceSettings.temperature": "Temperature",
       "inferenceSettings.topP": "Top P",
       "inferenceSettings.maxToken": "Max Token",
@@ -1095,6 +1267,9 @@ const Tool = () => {
       "platform.nGpuLayers": "Number of GPU Layers",
       "platform.gpuMemory": "GPU Memory",
       "platform.inputContextLength": "Input Context Length",
+      "errorHandling.title": "ERROR HANDLING",
+      "errorHandling.onError": "On Error",
+      "errorHandling.responseColumnName": "Response Column Name",
     },
     es: {
       "title": "Conexión LLM",
@@ -1108,6 +1283,8 @@ const Tool = () => {
       "prompt.warningLabel": "Por favor, seleccione el campo de prompt.",
       "prompt.useSystemPrompt": "Usar Prompt del Sistema",
       "prompt.systemPrompt": "Prompt del Sistema",
+      "platform.inferenceType": "Tipo de Inferencia",
+      "platform.serverUrl": "URL del Servidor",
       "platform.select": "Seleccionar Plataforma",
       "platform.selectOption": "Seleccione una plataforma",
       "platform.selectModel": "Seleccionar Modelo",
@@ -1122,6 +1299,9 @@ const Tool = () => {
       "platform.addApiKey": "Agregar Clave API",
       "platform.removeApiKey": "Eliminar",
       "platform.modelName": "Nombre del Modelo / Ruta del Modelo",
+      "platform.modelNameOnly": "Nombre del Modelo",
+      "platform.modelPath": "Ruta del Modelo",
+      "platform.browse": "Examinar",
       "inferenceSettings.temperature": "Temperatura",
       "inferenceSettings.topP": "Top P",
       "inferenceSettings.maxToken": "Token Máximo",
@@ -1145,6 +1325,9 @@ const Tool = () => {
       "platform.nGpuLayers": "Número de Capas GPU",
       "platform.gpuMemory": "Memoria GPU",
       "platform.inputContextLength": "Longitud del Contexto de Entrada",
+      "errorHandling.title": "MANEJO DE ERRORES",
+      "errorHandling.onError": "En caso de error",
+      "errorHandling.responseColumnName": "Nombre de columna de respuesta",
     },
     fr: {
       "title": "Connexion LLM",
@@ -1158,6 +1341,8 @@ const Tool = () => {
       "prompt.warningLabel": "Veuillez sélectionner le champ de prompt.",
       "prompt.useSystemPrompt": "Utiliser le Prompt Système",
       "prompt.systemPrompt": "Prompt Système",
+      "platform.inferenceType": "Type d'Inférence",
+      "platform.serverUrl": "URL du Serveur",
       "platform.select": "Sélectionner la Plateforme",
       "platform.selectOption": "Sélectionnez une plateforme",
       "platform.selectModel": "Sélectionner le Modèle",
@@ -1172,6 +1357,9 @@ const Tool = () => {
       "platform.addApiKey": "Ajouter une Clé API",
       "platform.removeApiKey": "Supprimer",
       "platform.modelName": "Nom du Modèle / Chemin du Modèle",
+      "platform.modelNameOnly": "Nom du Modèle",
+      "platform.modelPath": "Chemin du Modèle",
+      "platform.browse": "Parcourir",
       "inferenceSettings.temperature": "Temperatura",
       "inferenceSettings.topP": "Top P",
       "inferenceSettings.maxToken": "Token Maximum",
@@ -1192,9 +1380,12 @@ const Tool = () => {
       "saveConfig": "Sauvegarder",
       "importConfig": "Importer",
       "platform.gpuOffload": "GPU Offload",
-      "platform.nGpuLayers": "Nombre de Capas GPU",
-      "platform.gpuMemory": "Memoire GPU",
-      "platform.inputContextLength": "Longueur du Contexte d'Entrée",
+      "platform.nGpuLayers": "Nombre de couches GPU",
+      "platform.gpuMemory": "Mémoire GPU",
+      "platform.inputContextLength": "Longueur du contexte d'entrée",
+      "errorHandling.title": "GESTION DES ERREURS",
+      "errorHandling.onError": "En cas d'erreur",
+      "errorHandling.responseColumnName": "Nom de la colonne de réponse",
     },
     de: {
       "title": "LLM-Verbindung",
@@ -1208,6 +1399,8 @@ const Tool = () => {
       "prompt.warningLabel": "Bitte wählen Sie das Prompt-Feld aus.",
       "prompt.useSystemPrompt": "System-Prompt verwenden",
       "prompt.systemPrompt": "System-Prompt",
+      "platform.inferenceType": "Inferenztyp",
+      "platform.serverUrl": "Server-URL",
       "platform.select": "Plattform auswählen",
       "platform.selectOption": "Wählen Sie eine Plattform",
       "platform.selectModel": "Modell auswählen",
@@ -1222,6 +1415,9 @@ const Tool = () => {
       "platform.addApiKey": "API-Schlüssel hinzufügen",
       "platform.removeApiKey": "Entfernen",
       "platform.modelName": "Modellname / Modellpfad",
+      "platform.modelNameOnly": "Modellname",
+      "platform.modelPath": "Modellpfad",
+      "platform.browse": "Durchsuchen",
       "inferenceSettings.temperature": "Temperatur",
       "inferenceSettings.topP": "Top P",
       "inferenceSettings.maxToken": "Max Token",
@@ -1245,6 +1441,9 @@ const Tool = () => {
       "platform.nGpuLayers": "Anzahl der GPU-Ebenen",
       "platform.gpuMemory": "GPU-Speicher",
       "platform.inputContextLength": "Eingabe-Kontextlänge",
+      "errorHandling.title": "FEHLERBEHANDLUNG",
+      "errorHandling.onError": "Bei Fehler",
+      "errorHandling.responseColumnName": "Name der Antwortspalte",
     },
     pt: {
       "title": "ConecteLLM",
@@ -1258,6 +1457,8 @@ const Tool = () => {
       "prompt.warningLabel": "Por favor, selecione o campo de prompt.",
       "prompt.useSystemPrompt": "Usar Prompt do Sistema",
       "prompt.systemPrompt": "Prompt do Sistema",
+      "platform.inferenceType": "Tipo de Inferência",
+      "platform.serverUrl": "URL do Servidor",
       "platform.select": "Selecionar Plataforma",
       "platform.selectOption": "Selecione uma plataforma",
       "platform.selectModel": "Selecionar Modelo",
@@ -1272,6 +1473,9 @@ const Tool = () => {
       "platform.addApiKey": "Adicionar Chave API",
       "platform.removeApiKey": "Remover",
       "platform.modelName": "Nome do Modelo / Caminho do Modelo",
+      "platform.modelNameOnly": "Nome do Modelo",
+      "platform.modelPath": "Caminho do Modelo",
+      "platform.browse": "Procurar",
       "inferenceSettings.temperature": "Temperatura",
       "inferenceSettings.topP": "Top P",
       "inferenceSettings.maxToken": "Token Máximo",
@@ -1292,9 +1496,12 @@ const Tool = () => {
       "saveConfig": "Salvar",
       "importConfig": "Importar",
       "platform.gpuOffload": "GPU Offload",
-      "platform.nGpuLayers": "Número de Capas GPU",
-      "platform.gpuMemory": "Memoria GPU",
-      "platform.inputContextLength": "Longitude do Contexto de Entrada",
+      "platform.nGpuLayers": "Número de Camadas GPU",
+      "platform.gpuMemory": "Memória GPU",
+      "platform.inputContextLength": "Comprimento do Contexto de Entrada",
+      "errorHandling.title": "TRATAMENTO DE ERROS",
+      "errorHandling.onError": "Em caso de erro",
+      "errorHandling.responseColumnName": "Nome da coluna de resposta",
     },
     pl: {
       "title": "LLM Connect",
@@ -1308,6 +1515,8 @@ const Tool = () => {
       "prompt.warningLabel": "Proszę wybrać pole prompt.",
       "prompt.useSystemPrompt": "Użyj systemowego prompta",
       "prompt.systemPrompt": "Systemowy prompt",
+      "platform.inferenceType": "Typ Inferencji",
+      "platform.serverUrl": "Adres URL Serwera",
       "platform.select": "Wybierz platformę",
       "platform.selectOption": "Wybierz platformę",
       "platform.selectModel": "Wybierz model",
@@ -1322,6 +1531,9 @@ const Tool = () => {
       "platform.addApiKey": "Dodaj klucz API",
       "platform.removeApiKey": "Usuń",
       "platform.modelName": "Nazwa modelu / Ścieżka modelu",
+      "platform.modelNameOnly": "Nazwa modelu",
+      "platform.modelPath": "Ścieżka modelu",
+      "platform.browse": "Przeglądaj",
       "inferenceSettings.temperature": "Temperatura",
       "inferenceSettings.topP": "Top P",
       "inferenceSettings.maxToken": "Maksymalna liczba tokenów",
@@ -1332,6 +1544,9 @@ const Tool = () => {
       "inferenceSettings.batchProcessing": "Przetwarzanie wsadowe",
       "apiKeyInstructions": "Dla względów bezpieczeństwa, zdefiniuj swoje klucze API jako zmienne środowiskowe. Postępuj zgodnie z {docLink} dla dalszych informacji.",
       "apiKeyInstructions.docLink": "tym linkiem",
+      "tab.simulate": "Symulacja",
+      "simulate.simulateResponse": "Symuluj odpowiedź",
+      "simulate.simulatedResponseText": "Tekst symulowanej odpowiedzi",
       "inferenceSettings.maxBudget": "Budget Maksymalny ($)",
       "inferenceSettings.selectedConfig": "Wybrana konfiguracja: {platform} - {model}",
       "inferenceSettings.enforceJsonResponse": "Forçar Resposta JSON",
@@ -1342,6 +1557,9 @@ const Tool = () => {
       "platform.nGpuLayers": "Liczba Warstw GPU",
       "platform.gpuMemory": "Pamięć GPU",
       "platform.inputContextLength": "Długość Kontekstu Wejściowego",
+      "errorHandling.title": "OBSŁUGA BŁĘDÓW",
+      "errorHandling.onError": "W przypadku błędu",
+      "errorHandling.responseColumnName": "Nazwa kolumny odpowiedzi",
     },
     cn: {
       "title": "LLM 连接",
@@ -1355,6 +1573,8 @@ const Tool = () => {
       "prompt.warningLabel": "请选择提示字段。",
       "prompt.useSystemPrompt": "使用系统提示",
       "prompt.systemPrompt": "系统提示",
+      "platform.inferenceType": "推理类型",
+      "platform.serverUrl": "服务器 URL",
       "platform.select": "选择平台",
       "platform.selectOption": "选择一个平台",
       "platform.selectModel": "选择模型",
@@ -1369,6 +1589,9 @@ const Tool = () => {
       "platform.addApiKey": "添加 API 密钥",
       "platform.removeApiKey": "删除",
       "platform.modelName": "模型名称 / 模型路径",
+      "platform.modelNameOnly": "模型名称",
+      "platform.modelPath": "模型路径",
+      "platform.browse": "浏览",
       "inferenceSettings.temperature": "温度",
       "inferenceSettings.topP": "Top P",
       "inferenceSettings.maxToken": "最大令牌数",
@@ -1392,6 +1615,9 @@ const Tool = () => {
       "platform.nGpuLayers": "GPU 层数",
       "platform.gpuMemory": "GPU 内存",
       "platform.inputContextLength": "输入上下文长度",
+      "errorHandling.title": "错误处理",
+      "errorHandling.onError": "出错时",
+      "errorHandling.responseColumnName": "响应列名称",
     },
     ja: {
       "title": "LLM 接続",
@@ -1405,6 +1631,8 @@ const Tool = () => {
       "prompt.warningLabel": "プロンプトフィールドを選択してください。",
       "prompt.useSystemPrompt": "システムプロンプトを使用",
       "prompt.systemPrompt": "システムプロンプト",
+      "platform.inferenceType": "推論タイプ",
+      "platform.serverUrl": "サーバー URL",
       "platform.select": "プラットフォームを選択",
       "platform.selectOption": "プラットフォームを選択",
       "platform.selectModel": "モデルを選択",
@@ -1418,7 +1646,10 @@ const Tool = () => {
       "platform.apiKeyValue": "API キー値",
       "platform.addApiKey": "API キーを追加",
       "platform.removeApiKey": "削除",
-      "platform.modelName": "モデル名 / モデルパス", 
+      "platform.modelName": "モデル名 / モデルパス",
+      "platform.modelNameOnly": "モデル名",
+      "platform.modelPath": "モデルパス",
+      "platform.browse": "参照",
       "inferenceSettings.temperature": "温度",
       "inferenceSettings.topP": "Top P",
       "inferenceSettings.maxToken": "最大トークン数",
@@ -1439,9 +1670,12 @@ const Tool = () => {
       "saveConfig": "保存",
       "importConfig": "导入",
       "platform.gpuOffload": "GPU Offload",
-      "platform.nGpuLayers": "GPU 层数",
-      "platform.gpuMemory": "GPU 内存",
-      "platform.inputContextLength": "输入上下文长度",
+      "platform.nGpuLayers": "GPU レイヤー数",
+      "platform.gpuMemory": "GPU メモリ",
+      "platform.inputContextLength": "入力コンテキスト長",
+      "errorHandling.title": "エラー処理",
+      "errorHandling.onError": "エラー時",
+      "errorHandling.responseColumnName": "レスポンス列名",
     },
     ru: {
       "title": "LLM Connect",
@@ -1455,6 +1689,8 @@ const Tool = () => {
       "prompt.warningLabel": "Пожалуйста, выберите поле промпта.",
       "prompt.useSystemPrompt": "Использовать системный промпт",
       "prompt.systemPrompt": "Системный промпт",
+      "platform.inferenceType": "Тип вывода",
+      "platform.serverUrl": "URL сервера",
       "platform.select": "Выберите платформу",
       "platform.selectOption": "Выберите платформу",
       "platform.selectModel": "Выберите модель",
@@ -1469,6 +1705,9 @@ const Tool = () => {
       "platform.addApiKey": "Добавить API-ключ",
       "platform.removeApiKey": "Удалить",
       "platform.modelName": "Имя модели / Путь модели",
+      "platform.modelNameOnly": "Имя модели",
+      "platform.modelPath": "Путь к модели",
+      "platform.browse": "Обзор",
       "inferenceSettings.temperature": "Температура",
       "inferenceSettings.topP": "Top P",
       "inferenceSettings.maxToken": "Максимальное количество токенов",
@@ -1492,7 +1731,10 @@ const Tool = () => {
       "platform.nGpuLayers": "Число GPU-слоев",
       "platform.gpuMemory": "Память GPU",
       "platform.inputContextLength": "Длина входного контекста",
-    },          
+      "errorHandling.title": "ОБРАБОТКА ОШИБОК",
+      "errorHandling.onError": "При ошибке",
+      "errorHandling.responseColumnName": "Название столбца ответа",
+    },
   };
 
   return (

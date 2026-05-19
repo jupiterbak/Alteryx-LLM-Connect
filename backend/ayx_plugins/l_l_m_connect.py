@@ -16,6 +16,7 @@
 
 import json
 import os
+import subprocess
 from typing import Any, Dict, List
 from datetime import datetime
 
@@ -27,16 +28,18 @@ from litellm import Cache, batch_completion, completion, completion_cost, comple
 from litellm.utils import trim_messages
 from openai import OpenAIError
 from pandas.core.dtypes.common import is_string_dtype
-from llama_cpp import Llama
+from llama_cpp import Llama, LLAMA_SPLIT_MODE_LAYER
+from llama_cpp import llama_cpp as _llama_cpp
 import litellm
 
 # import debugpy
 
 DEFAULT_NUM_RETRIES = 100
-DEFAULT_INPUT_CONTEXT_LENGTH = 4096
+DEFAULT_INPUT_CONTEXT_LENGTH = 512
 os.environ["LITELLM_LOCAL_MODEL_COST_MAP"] = "True"
 os.environ["LITELLM_MODE"] = "PRODUCTION"
-DEFAULT_BATCH_SIZE = 512
+# GPU device index to use for inference.
+MAIN_GPU = 0
 
 
 class LLMConnect(PluginV2):
@@ -73,9 +76,13 @@ class LLMConnect(PluginV2):
         self.max_budget = float(self.provider.tool_config.get("maxBudget")) if self.provider.tool_config.get("maxBudget") else 1.001
         self.enforceJsonResponse = self.provider.tool_config.get("enforceJsonResponse") =="1"
         self.gpu_offload = self.provider.tool_config.get("gpuOffload") == "1" if self.provider.tool_config.get("gpuOffload") else False
-        self.n_gpu_layers = int(self.provider.tool_config.get("nGpuLayers")) if self.provider.tool_config.get("nGpuLayers") else 10
+        self.n_gpu_layers = int(self.provider.tool_config.get("nGpuLayers")) if self.provider.tool_config.get("nGpuLayers") else 0
         self.gpu_memory = int(self.provider.tool_config.get("gpuMemory")) if self.provider.tool_config.get("gpuMemory") else 10
         self.input_context_length = int(self.provider.tool_config.get("inputContextLength")) if self.provider.tool_config.get("inputContextLength") else DEFAULT_INPUT_CONTEXT_LENGTH
+        self.on_error = self.provider.tool_config.get("onError") if self.provider.tool_config.get("onError") else "warning"
+        self.response_column_name = self.provider.tool_config.get("responseColumnName") if self.provider.tool_config.get("responseColumnName") else "LLM Response"
+        self.inference_type = self.provider.tool_config.get("inferenceType") if self.provider.tool_config.get("inferenceType") else "Remote"
+        self.platform_doc_url = self.provider.tool_config.get("platformDocUrl") if self.provider.tool_config.get("platformDocUrl") else ""
 
         # log tool config
         self.provider.io.info(f"Tool Config: {json.dumps(self.provider.tool_config, indent=2)}")
@@ -104,23 +111,52 @@ class LLMConnect(PluginV2):
         # Add logic to handle local inference
         if self.platform == "**Local Inference**":
             try:
+                # List and check GPU resources if GPU offload is requested
                 self.provider.io.info(f"Using local inference")
+                self.list_gpu_resources()
+                if not self.check_gpu_support():
+                        self.provider.io.info(f"GPU offload requested but not supported. Falling back to CPU inference.")
+                        self.gpu_offload = False
+                
+                # Check for model files in case of local inference with gguf models
+                model_path, clip_model_path = self.find_model_files(self.model)
+                if not model_path:
+                    self.provider.io.info(f"Error: No main model GGUF found in '{self.model}'.")
+                if not os.path.exists(model_path):
+                    self.provider.io.info(f"Error: Model file not found at '{model_path}'.")
+                    
+                # Check requested context window length against model max context length if possible
+                gpu_layers_label = "all" if self.n_gpu_layers == -1 else ("none (CPU)" if self.n_gpu_layers == 0 else str(self.n_gpu_layers))
+                self.provider.io.info(f"Loading model from: {model_path}")
+                if clip_model_path:
+                    self.provider.io.info(f"Multimodal projector: {clip_model_path}")
+                self.provider.io.info(f"Initializing with {self.input_context_length} context window, GPU layers: {gpu_layers_label}... (this may take a moment)")
+                
                 if self.gpu_offload:
                     self.provider.io.info(f"Using GPU offload")
                     self.llama = Llama(
-                        model_path=self.model,
+                        model_path=model_path,
+                        clip_model_path=clip_model_path,
                         n_gpu_layers=self.n_gpu_layers,
-                        gpu_memory=self.gpu_memory,
+                        split_mode=LLAMA_SPLIT_MODE_LAYER,
                         seed=self.seed,
+                        main_gpu=self.main_gpu,
                         n_ctx=self.input_context_length,
-                        n_batch=DEFAULT_BATCH_SIZE
+                        flash_attn=True,
+                        verbose=False,
                     )
                 else:
                     self.provider.io.info(f"Using CPU")
                     self.llama = Llama(
-                        model_path=self.model,
-                        n_ctx=0,  # set to default model context length
-                        n_batch=DEFAULT_BATCH_SIZE 
+                        model_path=model_path,
+                        clip_model_path=clip_model_path,
+                        n_gpu_layers=0,
+                        split_mode=LLAMA_SPLIT_MODE_LAYER,
+                        seed=self.seed,
+                        main_gpu=0,
+                        n_ctx=self.input_context_length,
+                        flash_attn=True,
+                        verbose=False,
                     )
             except Exception as e:
                 self.provider.io.error(f"Error initializing local inference: {str(e)}")
@@ -128,6 +164,42 @@ class LLMConnect(PluginV2):
             self.llama = None
             self.provider.io.info(f"Using remote inference")
 
+    def check_gpu_support(self):
+        if not _llama_cpp.llama_supports_gpu_offload():
+            self.provider.io.info(f"ERROR: your device doesn't support GPU/CUDA offloading.")
+            return False
+        return True
+
+    def list_gpu_resources(self):
+        try:
+            result = subprocess.run(
+                ["nvidia-smi", "--query-gpu=index,name,memory.total,memory.free", "--format=csv,noheader,nounits"],
+                stdin=subprocess.DEVNULL, capture_output=True, text=True, check=True,
+            )
+            self.provider.io.info(f"Available GPUs:")
+            for line in result.stdout.strip().splitlines():
+                idx, name, total, free = [s.strip() for s in line.split(",")]
+                self.provider.io.info(f"  [{idx}] {name} — {int(free):,} / {int(total):,} MiB free")
+        except FileNotFoundError:
+            self.provider.io.info("GPU info: nvidia-smi not found (no NVIDIA driver or non-NVIDIA GPU).")
+        except subprocess.CalledProcessError as e:
+            self.provider.io.info(f"GPU info: nvidia-smi error — {e.stderr.strip()}")
+    
+    def find_model_files(self, model_dir):
+        """Return (main_model_path, clip_model_path) from a folder of GGUF files."""
+        if os.path.isfile(model_dir):
+            model_dir = os.path.dirname(model_dir)
+        try:
+            files = [f for f in os.listdir(model_dir) if f.endswith(".gguf")]
+        except FileNotFoundError:
+            return None, None
+        mmproj = next((f for f in files if "mmproj" in f.lower()), None)
+        main   = next((f for f in files if "mmproj" not in f.lower()), None)
+        return (
+            os.path.join(model_dir, main)   if main   else None,
+            os.path.join(model_dir, mmproj) if mmproj else None,
+        )
+        
     def create_new_log_file(self):
         if self.log_file:
             self.log_file.close()
@@ -200,17 +272,21 @@ class LLMConnect(PluginV2):
             cost = 0 # Set cost to 0 for simulated responses
 
             return pd.Series({
-                'output': output_content,
+                self.response_column_name: output_content,
                 'prompt_tokens': prompt_tokens,
                 'completion_tokens': completion_tokens,
                 'cost($)': cost
             })
-        
+
         except Exception as e:
-            self.provider.io.error(f"Error in completion: {str(e)}")
-            return pd.Series({
-                'output': None,
-            })
+            if self.on_error == "error":
+                self.provider.io.error(f"Error in completion: {str(e)}")
+                raise
+            else:
+                self.provider.io.info(f"Error in completion: {str(e)}")
+                return pd.Series({
+                    self.response_column_name: None,
+                })
 
 
     def process_row(self, row):
@@ -230,11 +306,11 @@ class LLMConnect(PluginV2):
                 "model": self.model,
                 "messages": messages,
                 "temperature": self.temperature,
-                "top_p": self.top_p,
+                # "top_p": self.top_p,
                 "max_tokens": self.max_token,
                 "stop": self.stop,
                 "seed": self.seed,
-                # "timeout": 10,
+                "timeout": 60,
                 "stream": False,
                 "drop_params": True,
                 # "num_retries": 100, #self.num_retries,
@@ -255,7 +331,7 @@ class LLMConnect(PluginV2):
                     completion_kwargs["api_key"] = self.api_keys
             
             # self.provider.io.info(f"Sending request...")
-            response = completion(**completion_kwargs)
+            response = completion_with_retries(**completion_kwargs)
             # self.provider.io.info(f"Response received.")
 
             output_content = response.choices[0].message.content
@@ -267,26 +343,30 @@ class LLMConnect(PluginV2):
                     cost = completion_cost(completion_response=response)
                     self.total_cost += cost
                 except Exception as e:
-                    self.provider.io.warn(f"Model {self.model} does not support cost calculation.")
+                    self.provider.io.info(f"Model {self.model} does not support cost calculation.")
                     cost = 0 # Set cost to 0 if model does not support cost calculation
             else:
                 cost = 0 # Set cost to 0 for simulated responses
 
             return pd.Series({
-                'output': output_content,
+                self.response_column_name: output_content,
                 'prompt_tokens': prompt_tokens,
                 'completion_tokens': completion_tokens,
                 'cost($)': cost
             })
 
         except Exception as e:
-            self.provider.io.error(f"Error in completion: {str(e)}")
-            return pd.Series({
-                'output': None,
-                'prompt_tokens': None,
-                'completion_tokens': None,
-                'cost($)': None
-            })
+            if self.on_error == "error":
+                self.provider.io.error(f"Error in completion: {str(e)}")
+                raise
+            else:
+                self.provider.io.info(f"Error in completion: {str(e)}")
+                return pd.Series({
+                    self.response_column_name: None,
+                    'prompt_tokens': None,
+                    'completion_tokens': None,
+                    'cost($)': None
+                })
 
     def process_batch(self, input_dataframe):
         """Process multiple rows of data through the LLM in batch mode."""
@@ -350,7 +430,7 @@ class LLMConnect(PluginV2):
                         cost = completion_cost(completion_response=response)
                         self.total_cost += cost
                     except Exception as e:
-                        self.provider.io.warn(f"Model {self.model} does not support cost calculation.")
+                        self.provider.io.info(f"Model {self.model} does not support cost calculation.")
                         cost = 0 # Set cost to 0 if model does not support cost calculation
                 else:
                     cost = 0  # Set cost to 0 for simulated responses
@@ -363,8 +443,12 @@ class LLMConnect(PluginV2):
             return outputs, prompt_tokens_list, completion_tokens_list, costs
 
         except Exception as e:
-            self.provider.io.error(f"Error in batch completion: {str(e)}")
-            return ([None] * len(input_dataframe), 
+            if self.on_error == "error":
+                self.provider.io.error(f"Error in batch completion: {str(e)}")
+                raise
+            else:
+                self.provider.io.info(f"Error in batch completion: {str(e)}")
+            return ([None] * len(input_dataframe),
                    [None] * len(input_dataframe),
                    [None] * len(input_dataframe),
                    [None] * len(input_dataframe))
@@ -412,19 +496,19 @@ class LLMConnect(PluginV2):
             # # debugpy.breakpoint()
             # Batch processing
             outputs, prompt_tokens_list, completion_tokens_list, costs = self.process_batch(current_batch)
-            
+
             # Add results to the current batch
-            current_batch['output'] = outputs
+            current_batch[self.response_column_name] = outputs
             current_batch['prompt_tokens'] = prompt_tokens_list
             current_batch['completion_tokens'] = completion_tokens_list
             current_batch['cost($)'] = costs
-        # if local inference 
+        # if local inference
         elif self.platform == "**Local Inference**":
             # # debugpy.breakpoint()
             result = current_batch[self.prompt_field].transform(self.process_row_locally)
-            
+
             # Add results to the current batch
-            current_batch['output'] = result['output']
+            current_batch[self.response_column_name] = result[self.response_column_name]
             current_batch['prompt_tokens'] = result['prompt_tokens']
             current_batch['completion_tokens'] = result['completion_tokens']
             current_batch['cost($)'] = result['cost($)']
@@ -432,9 +516,9 @@ class LLMConnect(PluginV2):
             # # debugpy.breakpoint()
             # Single processing using pandas transform
             result = current_batch[self.prompt_field].transform(self.process_row)
-            
+
             # Add results to the current batch
-            current_batch['output'] = result['output']
+            current_batch[self.response_column_name] = result[self.response_column_name]
             current_batch['prompt_tokens'] = result['prompt_tokens']
             current_batch['completion_tokens'] = result['completion_tokens']
             current_batch['cost($)'] = result['cost($)']

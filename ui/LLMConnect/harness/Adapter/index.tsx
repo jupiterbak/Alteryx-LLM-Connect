@@ -219,7 +219,7 @@ class Adapter extends Component<IAdapterProps, IAdapterState> {
             <Divider orientation="vertical" />
             <Grid item xs className={classes.fullHeight}>
               <Paper className={classes.fullHeight}>
-                <Grid container justify="center">
+                <Grid container justifyContent="center">
                   <Grid xs={5} item>
                     <Box m={4}>
                       <FormControl fullWidth>
@@ -234,7 +234,7 @@ class Adapter extends Component<IAdapterProps, IAdapterState> {
                     </Box>
                   </Grid>
                 </Grid>
-                <Grid className={classes.fullHeight} container justify="center">
+                <Grid className={classes.fullHeight} container justifyContent="center">
                   <Grid item>
                     <Box mt={30}>
                       { model.Meta ? <InputDataIcon /> : null }
