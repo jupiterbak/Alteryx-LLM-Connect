@@ -1,6 +1,6 @@
 {
-    "name": "MaxLLM",
-    "tool_category": "Max LLM",
+    "name": "ConnectLLM",
+    "tool_category": "Connect LLM",
     "package_icon_path": "configuration\\default_package_icon.png",
     "author": "Jupiter Bakakeu",
     "company": "Alteryx Inc.",

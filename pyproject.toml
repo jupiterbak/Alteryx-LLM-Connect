@@ -1,5 +1,5 @@
 [project]
-name = "maxllm"
+name = "ConnectLLM"
 authors = [
     { name="Jupiter Bakakeu", email="jupiter.bakakeu@gmail.com" }
 ]

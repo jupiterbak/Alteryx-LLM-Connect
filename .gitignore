@@ -104,3 +104,4 @@ pip-delete-this-directory.txt
 *.bak
 
 .claude/
+uv.lock
