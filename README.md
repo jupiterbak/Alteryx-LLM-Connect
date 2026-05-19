@@ -78,13 +78,9 @@ Loads a GGUF model file directly inside the Alteryx process using **llama-cpp-py
 
    - *Remote*: select a cloud platform, model, and set API keys as environment variables
 
-     ![Select platform and supported models](docs/images/Select-platform-and-supported-models.png)
-
    - *Localhost*: enter the server URL and model name for Ollama or LM Studio
 
    - *CPU/GPU*: browse for a GGUF model folder and configure GPU offload settings
-
-     ![Select execution mode](docs/images/Select-execution-mode.png)
 
    **Inference Settings tab** — Tune generation parameters:
 
@@ -100,7 +96,7 @@ Loads a GGUF model file directly inside the Alteryx process using **llama-cpp-py
 
    ![Simulate responses](docs/images/Simulate-responses.png)
 
-5. Define your prompt and system prompt:
+5. Define your prompt and system prompt if needed:
 
    ![Define prompt and system prompt](docs/images/Define-prompt-and_system-prompt.png)
 
@@ -163,16 +159,6 @@ You can save your configuration settings for easy reuse:
 2. Click the **Save** (disk) icon in the top-right corner
 3. A JSON file is downloaded with your current settings
 4. Load saved parameters in future workflows using the **Import** icon
-
-## System Requirements
-
-| Requirement | Minimum |
-| --- | --- |
-| OS | Windows 10/11 or Linux |
-| RAM (CPU inference) | 16 GB |
-| NVIDIA GPU VRAM (GPU inference) | 6 GB+ |
-| CUDA (GPU inference) | 11.7 or higher |
-| Python | 3.10.13 |
 
 ## Contributing
 
